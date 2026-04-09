@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import os
+import json
 
 # Ensure the root directory is in the sys.path to import 'shared' and 'backend'
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,12 +27,27 @@ async def main():
                 continue
                 
             print("Parsing intent...")
-            command = await parse_intent(text)
+            response = await parse_intent(text)
             
-            print("\n[Structured Output]")
-            print(f"Intent: {command.intent.value}")
-            print(f"Target: {command.target}")
-            print(f"Param:  {command.parameters}")
+            print(f"\n{response.message}\n")
+            if response.command:
+                command = response.command
+                print(f"{{")
+                print(f'  "intent": "{command.intent}",')
+                print(f'  "type": "{command.type.value}",')
+                if command.type.value == "multi_step" and command.tasks:
+                    print(f'  "tasks": [')
+                    for i, task in enumerate(command.tasks):
+                        task_dict = task.model_dump(exclude_none=True)
+                        comma = "," if i < len(command.tasks)-1 else ""
+                        print(f"    {json.dumps(task_dict)}{comma}")
+                    print(f'  ]')
+                else:
+                    target_str = f'"{command.target}"' if command.target else "null"
+                    print(f'  "target": {target_str},')
+                    print(f'  "parameters": {json.dumps(command.parameters)}')
+                print(f"}}")
+
             
         except KeyboardInterrupt:
             break

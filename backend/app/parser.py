@@ -5,27 +5,61 @@ import os
 # Add parent directory to path so we can import shared
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from shared.schema import ActionCommand, IntentType
+from shared.schema import ActionCommand, CommandType, AssistantResponse
 from .llm import generate_chat
 
 SYSTEM_PROMPT = """
-You are JARVIS, a helpful AI that interprets natural language into structured execution commands.
-Categorize the user's request into one of the following intents:
-- OPEN_APP: to open or launch an application. Provide the application name in 'target'.
-- OPEN_PATH: to open a folder, file, or website URL. Provide the path or URL in 'target'.
-- SEARCH_WEB: to perform a web search. Provide the query in 'target'.
-- UNKNOWN: if the request doesn't match any known intent.
+You are JARVIS, a helpful, conversational AI assistant that can also execute system commands.
+Your responses must ALWAYS match the AssistantResponse schema, containing a conversational "message" and an optional structural "command".
+
+IMPORTANT PATTERN YOU SHOULD FOLLOW:
+
+🟢 Case 1 — Pure conversation
+Input: "hello!"
+{
+  "message": "Welcome back. What are we working on today?"
+}
+
+🟢 Case 2 — Conversation + Simple Action
+Input: "open chrome"
+{
+  "message": "Opening Chrome for you.",
+  "command": {
+    "intent": "OPEN_APP",
+    "type": "single_step",
+    "target": "chrome"
+  }
+}
+
+🔴 Case 3 — Conversation + Complex Task Pipeline
+Input: "do my pending assignments"
+{
+  "message": "Alright, I'll set up your assignment environment.",
+  "command": {
+    "intent": "HANDLE_ASSIGNMENTS",
+    "type": "multi_step",
+    "tasks": [
+      {"action": "OPEN_APP", "target": "chrome"},
+      {"action": "OPEN_URL", "target": "https://gcr.example.com"},
+      {"action": "LOGIN", "target": "gcr"},
+      {"action": "FETCH_PENDING_ASSIGNMENTS"}
+    ]
+  }
+}
+
+If the task requires multiple logical steps to achieve, use 'multi_step' and outline them in 'tasks'. Tasks can contain extra fields if necessary like 'duration', 'destination' etc.
+For simple single intents, use 'single_step' and provide 'target'. Ensure you always provide a natural conversational response in the 'message' field.
 
 Return your response AS A VALID JSON OBJECT matching the schema format. Do not include any other text or markdown block formatting, just raw JSON.
 """
 
-async def parse_intent(text: str) -> ActionCommand:
+async def parse_intent(text: str) -> AssistantResponse:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.strip()},
         {"role": "user", "content": text}
     ]
     
-    schema = ActionCommand.model_json_schema()
+    schema = AssistantResponse.model_json_schema()
     
     response = await generate_chat(messages=messages, format=schema)
     
@@ -38,7 +72,11 @@ async def parse_intent(text: str) -> ActionCommand:
             content = content[3:-3].strip()
             
         data = json.loads(content)
-        return ActionCommand(**data)
+        return AssistantResponse(**data)
     except (KeyError, json.JSONDecodeError) as e:
         # Fallback if parsing fails
-        return ActionCommand(intent=IntentType.UNKNOWN, target=None, parameters={"error": str(e), "raw": response.get("message", {}).get("content", "")})
+        return AssistantResponse(
+            message="I'm sorry, I encountered an internal error interpreting that request.",
+            command=ActionCommand(intent="UNKNOWN", type=CommandType.SINGLE, target=None, parameters={"error": str(e), "raw": response.get("message", {}).get("content", "")})
+        )
+
