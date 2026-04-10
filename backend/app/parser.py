@@ -5,47 +5,51 @@ import os
 # Add parent directory to path so we can import shared
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from shared.schema import ActionCommand, CommandType, AssistantResponse, Task
+from shared.schema import ActionCommand, AssistantResponse, Task
 from shared.workflows import WORKFLOWS
 from .llm import generate_chat
 
 SYSTEM_PROMPT = """
-You are JARVIS, a helpful, conversational AI assistant that can also execute system commands.
-Your responses must ALWAYS match the AssistantResponse schema, containing a conversational "message" and an optional structural "command".
-You MUST choose an intent ONLY from the valid predefined enums. Do not invent tasks, just provide the correct intent, type, and target/parameters.
+You are JARVIS, a professional and proactive AI assistant.
+Your goal is to understand user intent and provide a natural response followed by a structural command IF an action is required.
 
-IMPORTANT PATTERN YOU SHOULD FOLLOW:
+CRITICAL RULES:
+1. You MUST ONLY output intents from this list:
+   - OPEN_APP
+   - HANDLE_ASSIGNMENTS
+   - CREATE_PROJECT
+   - START_PROJECT
+   - GENERAL_CHAT
+   - UNKNOWN
 
-🟢 Case 1 — Pure conversation
-Input: "hello!"
+2. NEVER include "tasks", "type", or "multi_step" in your JSON.
+3. Intent must be a plain string (e.g., "HANDLE_ASSIGNMENTS").
+4. If no action is required (e.g., greetings, general questions), DO NOT output JSON.
+5. If the user mentions assignments or projects, BE PROACTIVE and trigger the appropriate intent.
+
+FORMAT FOR ACTIONS:
+<Conversational message>
+
 {
-  "message": "Welcome back. What are we working on today?"
+  "intent": "...",
+  "target": "optional"
 }
 
-🟢 Case 2 — Conversation + Command (Single Step)
-Input: "open chrome"
-{
-  "message": "Opening Chrome for you.",
-  "command": {
-    "intent": "OPEN_APP",
-    "type": "single_step",
-    "target": "chrome"
-  }
-}
+EXAMPLES:
+Input: "hello"
+Output: "Hello! How can I help you today?"
 
-🔴 Case 3 — Conversation + Command (Complex Workflow)
-Input: "do my pending assignments"
+Input: "do my assignment"
+Output: "Alright, I'll set everything up for your assignments.
 {
-  "message": "Alright, I'll set up your assignment environment.",
-  "command": {
-    "intent": "HANDLE_ASSIGNMENTS",
-    "type": "multi_step",
-    "target": "gcr"
-  }
-}
+  "intent": "HANDLE_ASSIGNMENTS"
+}"
 
-Ensure you always provide a natural conversational response in the 'message' field.
-Return your response AS A VALID JSON OBJECT matching the schema format. Do not include any other text or markdown block formatting, just raw JSON.
+Input: "ive got assignments due"
+Output: "I see those assignments. I'll get your environment ready so you can start working right away.
+{
+  "intent": "HANDLE_ASSIGNMENTS"
+}"
 """
 
 async def parse_intent(text: str) -> AssistantResponse:
@@ -54,34 +58,59 @@ async def parse_intent(text: str) -> AssistantResponse:
         {"role": "user", "content": text}
     ]
     
-    schema = AssistantResponse.model_json_schema()
+    # We no longer use strict JSON format from Ollama because we want Text + JSON
+    response = await generate_chat(messages=messages)
     
-    response = await generate_chat(messages=messages, format=schema)
+    content = response.get("message", {}).get("content", "").strip()
     
-    try:
-        content = response["message"]["content"]
-        # Clean up possible markdown code blocks
-        if content.startswith("```json"):
-            content = content[7:-3].strip()
-        elif content.startswith("```"):
-            content = content[3:-3].strip()
-            
-        data = json.loads(content)
-        parsed_response = AssistantResponse(**data)
+    if "{" in content:
+        # Split text and JSON
+        json_start = content.index("{")
+        message = content[:json_start].strip()
+        json_part = content[json_start:].strip()
         
-        # Inject tasks from predefined workflows if applicable
-        if parsed_response.command and parsed_response.command.intent:
-            intent_val = parsed_response.command.intent.value
-            if intent_val in WORKFLOWS:
-                workflow_tasks = WORKFLOWS[intent_val]
-                parsed_response.command.tasks = [Task(**task) for task in workflow_tasks]
+        try:
+            # Clean up markdown if present
+            if json_part.startswith("```json"):
+                json_part = json_part[7:-3].strip()
+            elif json_part.startswith("```"):
+                json_part = json_part[3:-3].strip()
                 
-        return parsed_response
-    except (KeyError, json.JSONDecodeError) as e:
-        # Fallback if parsing fails
+            data = json.loads(json_part)
+            intent = data.get("intent", "UNKNOWN")
+            target = data.get("target")
+            
+            # Map back to AssistantResponse schema
+            command = ActionCommand(intent=intent, target=target)
+            
+            # Inject tasks from predefined workflows if applicable
+            if intent in WORKFLOWS:
+                workflow_tasks = WORKFLOWS[intent]
+                tasks_to_add = []
+                for t in workflow_tasks:
+                    task_data = t.copy()
+                    # If task target is not specified in workflow, use the one from LLM
+                    if task_data.get("target") is None:
+                        task_data["target"] = target
+                    tasks_to_add.append(Task(**task_data))
+                command.tasks = tasks_to_add
+                
+            parsed_response = AssistantResponse(
+                message=message or "Done.",
+                command=command
+            )
+            
+            return parsed_response
+        except json.JSONDecodeError:
+            return AssistantResponse(
+                message=content,
+                command=None
+            )
+    else:
+        # Pure conversation
         return AssistantResponse(
-            message="I'm sorry, I encountered an internal error interpreting that request.",
-            command=ActionCommand(intent="UNKNOWN", type=CommandType.SINGLE, target=None, parameters={"error": str(e), "raw": response.get("message", {}).get("content", "")})
+            message=content,
+            command=None
         )
 
 

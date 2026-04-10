@@ -34,17 +34,18 @@ async def main():
                 command = response.command
                 print(f"{{")
                 print(f'  "intent": "{command.intent}",')
-                print(f'  "type": "{command.type.value}",')
-                if command.type.value == "multi_step" and command.tasks:
+                if command.target:
+                    print(f'  "target": "{command.target}",')
+                
+                if command.tasks:
                     print(f'  "tasks": [')
                     for i, task in enumerate(command.tasks):
                         task_dict = task.model_dump(exclude_none=True)
                         comma = "," if i < len(command.tasks)-1 else ""
                         print(f"    {json.dumps(task_dict)}{comma}")
                     print(f'  ]')
-                else:
-                    target_str = f'"{command.target}"' if command.target else "null"
-                    print(f'  "target": {target_str},')
+                
+                if command.parameters:
                     print(f'  "parameters": {json.dumps(command.parameters)}')
                 print(f"}}")
 
