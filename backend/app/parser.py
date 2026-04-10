@@ -5,12 +5,14 @@ import os
 # Add parent directory to path so we can import shared
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from shared.schema import ActionCommand, CommandType, AssistantResponse
+from shared.schema import ActionCommand, CommandType, AssistantResponse, Task
+from shared.workflows import WORKFLOWS
 from .llm import generate_chat
 
 SYSTEM_PROMPT = """
 You are JARVIS, a helpful, conversational AI assistant that can also execute system commands.
 Your responses must ALWAYS match the AssistantResponse schema, containing a conversational "message" and an optional structural "command".
+You MUST choose an intent ONLY from the valid predefined enums. Do not invent tasks, just provide the correct intent, type, and target/parameters.
 
 IMPORTANT PATTERN YOU SHOULD FOLLOW:
 
@@ -20,7 +22,7 @@ Input: "hello!"
   "message": "Welcome back. What are we working on today?"
 }
 
-🟢 Case 2 — Conversation + Simple Action
+🟢 Case 2 — Conversation + Command (Single Step)
 Input: "open chrome"
 {
   "message": "Opening Chrome for you.",
@@ -31,25 +33,18 @@ Input: "open chrome"
   }
 }
 
-🔴 Case 3 — Conversation + Complex Task Pipeline
+🔴 Case 3 — Conversation + Command (Complex Workflow)
 Input: "do my pending assignments"
 {
   "message": "Alright, I'll set up your assignment environment.",
   "command": {
     "intent": "HANDLE_ASSIGNMENTS",
     "type": "multi_step",
-    "tasks": [
-      {"action": "OPEN_APP", "target": "chrome"},
-      {"action": "OPEN_URL", "target": "https://gcr.example.com"},
-      {"action": "LOGIN", "target": "gcr"},
-      {"action": "FETCH_PENDING_ASSIGNMENTS"}
-    ]
+    "target": "gcr"
   }
 }
 
-If the task requires multiple logical steps to achieve, use 'multi_step' and outline them in 'tasks'. Tasks can contain extra fields if necessary like 'duration', 'destination' etc.
-For simple single intents, use 'single_step' and provide 'target'. Ensure you always provide a natural conversational response in the 'message' field.
-
+Ensure you always provide a natural conversational response in the 'message' field.
 Return your response AS A VALID JSON OBJECT matching the schema format. Do not include any other text or markdown block formatting, just raw JSON.
 """
 
@@ -72,11 +67,21 @@ async def parse_intent(text: str) -> AssistantResponse:
             content = content[3:-3].strip()
             
         data = json.loads(content)
-        return AssistantResponse(**data)
+        parsed_response = AssistantResponse(**data)
+        
+        # Inject tasks from predefined workflows if applicable
+        if parsed_response.command and parsed_response.command.intent:
+            intent_val = parsed_response.command.intent.value
+            if intent_val in WORKFLOWS:
+                workflow_tasks = WORKFLOWS[intent_val]
+                parsed_response.command.tasks = [Task(**task) for task in workflow_tasks]
+                
+        return parsed_response
     except (KeyError, json.JSONDecodeError) as e:
         # Fallback if parsing fails
         return AssistantResponse(
             message="I'm sorry, I encountered an internal error interpreting that request.",
             command=ActionCommand(intent="UNKNOWN", type=CommandType.SINGLE, target=None, parameters={"error": str(e), "raw": response.get("message", {}).get("content", "")})
         )
+
 
