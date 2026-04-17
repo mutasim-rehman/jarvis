@@ -15,10 +15,13 @@ def test_health():
 
 def test_parse_api_mock(monkeypatch):
     from backend.app.parser import ActionCommand
-    from shared.schema import IntentType
+    from shared.schema import AssistantResponse, IntentType
     
     async def mock_parse_intent(text: str):
-        return ActionCommand(intent=IntentType.OPEN_APP, target="chrome")
+        return AssistantResponse(
+            message="Opening Chrome now.",
+            command=ActionCommand(intent=IntentType.OPEN_APP, target="chrome"),
+        )
         
     import backend.app.main
     monkeypatch.setattr(backend.app.main, "parse_intent", mock_parse_intent)
@@ -26,6 +29,7 @@ def test_parse_api_mock(monkeypatch):
     response = client.post("/api/parse", json={"text": "open chrome"})
     assert response.status_code == 200
     data = response.json()
-    assert data["command"]["intent"] == "OPEN_APP"
-    assert data["command"]["target"] == "chrome"
+    assert data["command"]["message"] == "Opening Chrome now."
+    assert data["command"]["command"]["intent"] == "OPEN_APP"
+    assert data["command"]["command"]["target"] == "chrome"
     assert data["original_text"] == "open chrome"
