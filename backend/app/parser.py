@@ -3,18 +3,20 @@ import re
 import sys
 import os
 
-# Add parent directory to path so we can import shared
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from shared.schema import ActionCommand, AssistantResponse, Task
+from shared.schema import ActionCommand, AssistantResponse, RouteKind, Task
 from shared.workflows import WORKFLOWS
+from .heuristics import (
+    classify_user_text,
+    reconcile_llm_intent,
+    should_drop_workflow_without_domain,
+)
 from .llm import generate_chat
 
 ALLOWED_INTENTS = set(WORKFLOWS.keys()) | {"GENERAL_CHAT", "UNKNOWN"}
 SUPPORTED_INTENTS_TEXT = "\n".join(
-    f"   - {intent}"
-    for intent in sorted(ALLOWED_INTENTS)
-    if intent != "UNKNOWN"
+    f"   - {intent}" for intent in sorted(ALLOWED_INTENTS) if intent != "UNKNOWN"
 )
 
 SYSTEM_PROMPT = f"""
@@ -29,7 +31,9 @@ CRITICAL RULES:
 2. NEVER include "tasks", "type", or "multi_step" in your JSON.
 3. Intent must be a plain string (e.g., "HANDLE_ASSIGNMENTS").
 4. If no action is required (e.g., greetings, general questions), DO NOT output JSON.
-5. If the user mentions assignments or projects, BE PROACTIVE and trigger the appropriate intent.
+5. If the user mentions assignments, homework, or a coding/project setup, choose the matching intent.
+6. For listening to music, use PLAY_MUSIC (not START_PROJECT). For opening an app by name, prefer OPEN_APP with target set to that app.
+7. Never output action JSON if the user asks you to complete their graded homework, essays, or exams for them — answer conversationally only (no workflow).
 
 FORMAT FOR ACTIONS:
 <Conversational message>
@@ -49,12 +53,53 @@ Output: "Alright, I'll set everything up for your assignments.
   "intent": "HANDLE_ASSIGNMENTS"
 }}"
 
-Input: "ive got assignments due"
-Output: "I see those assignments. I'll get your environment ready so you can start working right away.
+Input: "play some music"
+Output: "Playing music for you.
 {{
-  "intent": "HANDLE_ASSIGNMENTS"
+  "intent": "PLAY_MUSIC"
 }}"
 """
+
+
+def _normalize_assistant_message(message: str) -> str:
+    m = message.strip()
+    if len(m) >= 2 and m[0] == m[-1] and m[0] in "\"'":
+        m = m[1:-1].strip()
+    return m
+
+
+def _structured_start(content: str) -> int | None:
+    positions: list[int] = []
+    for sep in ("{", "("):
+        j = content.find(sep)
+        if j != -1:
+            positions.append(j)
+    return min(positions) if positions else None
+
+
+def _extract_conversational_message(content: str) -> str:
+    idx = _structured_start(content)
+    if idx is not None and idx > 0:
+        return _normalize_assistant_message(content[:idx].strip())
+    return _normalize_assistant_message(content)
+
+
+_INTENT_LABEL_ALIASES = {
+    "generalized chat": "GENERAL_CHAT",
+    "general chat": "GENERAL_CHAT",
+}
+
+
+def _canonicalize_intent_label(raw: str) -> str | None:
+    low = re.sub(r"\s+", " ", raw.strip().lower())
+    if not low:
+        return None
+    if low in _INTENT_LABEL_ALIASES:
+        return _INTENT_LABEL_ALIASES[low]
+    compact = re.sub(r"\s+", "_", low).upper()
+    if compact in ALLOWED_INTENTS:
+        return compact
+    return None
 
 
 def _extract_intent_from_text(content: str) -> str | None:
@@ -63,6 +108,12 @@ def _extract_intent_from_text(content: str) -> str | None:
         intent = intent_match.group(1).strip()
         if intent in ALLOWED_INTENTS:
             return intent
+
+    loose = re.search(r"intent\s*:\s*\"([^\"]*)\"", content, re.IGNORECASE)
+    if loose:
+        cand = _canonicalize_intent_label(loose.group(1))
+        if cand and cand in ALLOWED_INTENTS:
+            return cand
 
     bare_intent_match = re.fullmatch(r'["\']?\s*([A-Z_]+)\s*["\']?', content.strip())
     if bare_intent_match:
@@ -74,25 +125,16 @@ def _extract_intent_from_text(content: str) -> str | None:
 
 
 def _fallback_intent_from_user_text(text: str) -> tuple[str | None, str | None]:
-    lowered = text.lower()
-
-    assignment_keywords = ("assignment", "homework", "classwork", "coursework", "due")
-    if any(k in lowered for k in assignment_keywords):
-        if any(k in lowered for k in ("check", "what do i have", "what's due", "pending")):
-            return "CHECK_ASSIGNMENTS", None
-        return "HANDLE_ASSIGNMENTS", None
-
-    if any(k in lowered for k in ("start project", "work on project", "continue project", "resume project")):
-        if "create" in lowered or "new project" in lowered:
-            return "CREATE_PROJECT", None
-        if "resume" in lowered or "continue" in lowered:
-            return "RESUME_PROJECT", None
-        return "START_PROJECT", None
-
+    """Last-resort when JSON is invalid; mirrors heuristics for assignment/project."""
+    h = classify_user_text(text)
+    if h.force_intent:
+        return h.force_intent, h.force_target
     return None, None
 
 
-def _build_command(intent: str, target: str | None) -> ActionCommand:
+def _build_command(intent: str, target: str | None) -> ActionCommand | None:
+    if intent in ("UNKNOWN", "GENERAL_CHAT"):
+        return None
     command = ActionCommand(intent=intent, target=target)
     if intent in WORKFLOWS:
         tasks_to_add = []
@@ -105,73 +147,94 @@ def _build_command(intent: str, target: str | None) -> ActionCommand:
     return command
 
 
+def _wrap(message: str, command: ActionCommand | None) -> AssistantResponse:
+    route = RouteKind.DESKTOP_EXECUTION if command else RouteKind.INFORMATIONAL
+    return AssistantResponse(message=message, command=command, route=route)
+
+
 async def parse_intent(text: str) -> AssistantResponse:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.strip()},
-        {"role": "user", "content": text}
+        {"role": "user", "content": text},
     ]
-    
-    # We no longer use strict JSON format from Ollama because we want Text + JSON
+
     response = await generate_chat(messages=messages)
-    
     content = response.get("message", {}).get("content", "").strip()
-    
-    if "{" in content:
-        # Split text and JSON
-        json_start = content.index("{")
-        message = content[:json_start].strip()
+
+    cls = classify_user_text(text)
+    base_message = _extract_conversational_message(content) if content else ""
+
+    if cls.suppress_structured_command:
+        msg = base_message or "Sure — what would you like to do?"
+        return _wrap(msg, None)
+
+    if cls.force_intent:
+        cmd = _build_command(cls.force_intent, cls.force_target)
+        msg = base_message or "On it."
+        return _wrap(msg, cmd)
+
+    json_start = content.find("{")
+    if json_start != -1:
         json_part = content[json_start:].strip()
-        
+
         try:
-            # Clean up markdown if present
             if json_part.startswith("```json"):
                 json_part = json_part[7:-3].strip()
             elif json_part.startswith("```"):
                 json_part = json_part[3:-3].strip()
-                
+
             data = json.loads(json_part)
             intent = str(data.get("intent", "UNKNOWN")).strip()
             target = data.get("target")
+            if isinstance(target, str):
+                target = target.strip() or None
 
             if intent not in ALLOWED_INTENTS:
-                intent = "UNKNOWN"
+                normalized = _canonicalize_intent_label(intent)
+                intent = normalized if normalized else "UNKNOWN"
 
-            return AssistantResponse(
-                message=message or "Done.",
-                command=_build_command(intent=intent, target=target),
-            )
+            intent, target = reconcile_llm_intent(text, intent, target)
+
+            if intent in ("UNKNOWN", "GENERAL_CHAT"):
+                msg = base_message or _normalize_assistant_message(content[:json_start].strip()) or "Okay."
+                return _wrap(msg, None)
+
+            if should_drop_workflow_without_domain(text, intent):
+                msg = base_message or "What should I help you with?"
+                return _wrap(msg, None)
+
+            cmd = _build_command(intent, target)
+            msg = base_message or "Done."
+            return _wrap(msg, cmd)
         except json.JSONDecodeError:
-            extracted_intent = _extract_intent_from_text(content)
-            if extracted_intent and extracted_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
-                return AssistantResponse(
-                    message="Got it. Preparing that now.",
-                    command=_build_command(intent=extracted_intent, target=None),
-                )
-            fallback_intent, fallback_target = _fallback_intent_from_user_text(text)
-            if fallback_intent:
-                return AssistantResponse(
-                    message="Got it. I can handle that workflow.",
-                    command=_build_command(intent=fallback_intent, target=fallback_target),
-                )
-            return AssistantResponse(message=content, command=None)
-    else:
-        extracted_intent = _extract_intent_from_text(content)
-        if extracted_intent and extracted_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
-            return AssistantResponse(
-                message="Got it. Preparing that now.",
-                command=_build_command(intent=extracted_intent, target=None),
-            )
+            extracted = _extract_intent_from_text(content)
+            if extracted and extracted not in {"GENERAL_CHAT", "UNKNOWN"}:
+                extracted, _t = reconcile_llm_intent(text, extracted, None)
+                if should_drop_workflow_without_domain(text, extracted):
+                    return _wrap(base_message or content, None)
+                if extracted in ("GENERAL_CHAT", "UNKNOWN"):
+                    return _wrap(base_message or content, None)
+                cmd = _build_command(extracted, None)
+                return _wrap(base_message or "On it.", cmd)
+            fb_intent, fb_target = _fallback_intent_from_user_text(text)
+            if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
+                cmd = _build_command(fb_intent, fb_target)
+                return _wrap(base_message or "On it.", cmd)
+            return _wrap(base_message or content, None)
 
-        fallback_intent, fallback_target = _fallback_intent_from_user_text(text)
-        if fallback_intent:
-            return AssistantResponse(
-                message="Got it. I can handle that workflow.",
-                command=_build_command(intent=fallback_intent, target=fallback_target),
-            )
+    extracted = _extract_intent_from_text(content)
+    if extracted and extracted not in {"GENERAL_CHAT", "UNKNOWN"}:
+        extracted, ext_target = reconcile_llm_intent(text, extracted, None)
+        if should_drop_workflow_without_domain(text, extracted):
+            return _wrap(base_message or content, None)
+        if extracted in ("GENERAL_CHAT", "UNKNOWN"):
+            return _wrap(base_message or content, None)
+        cmd = _build_command(extracted, ext_target)
+        return _wrap(base_message or "On it.", cmd)
 
-        return AssistantResponse(
-            message=content,
-            command=None
-        )
+    fb_intent, fb_target = _fallback_intent_from_user_text(text)
+    if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
+        cmd = _build_command(fb_intent, fb_target)
+        return _wrap(base_message or content or "On it.", cmd)
 
-
+    return _wrap(base_message or content, None)

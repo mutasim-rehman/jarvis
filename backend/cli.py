@@ -26,10 +26,14 @@ async def main():
             if not text.strip():
                 continue
                 
-            print("Parsing intent...")
+            print("Parsing intent...", flush=True)
             response = await parse_intent(text)
-            
-            print(f"\n{response.message}\n")
+
+            msg = response.message.strip()
+            if len(msg) >= 2 and msg[0] == msg[-1] and msg[0] in "\"'":
+                msg = msg[1:-1].strip()
+
+            print(f"\n{msg}\n", flush=True)
             if response.command:
                 command = response.command
                 print(f"{{")
@@ -47,13 +51,13 @@ async def main():
                 
                 if command.parameters:
                     print(f'  "parameters": {json.dumps(command.parameters)}')
-                print(f"}}")
+                print(f"}}", flush=True)
 
             
         except KeyboardInterrupt:
             break
         except Exception as e:
-            print(f"\nError: {e}")
+            print(f"\nError: {e}", flush=True)
 
 if __name__ == "__main__":
     try:
