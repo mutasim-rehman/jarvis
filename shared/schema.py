@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from .workflows import IntentType  # re-export for clients/tests
 
 # Bump when breaking API or command shape changes (executor / controllers depend on this).
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 
 
 class RouteKind(str, Enum):
@@ -57,3 +57,23 @@ class ParseResponse(BaseModel):
     )
     command: AssistantResponse
     original_text: str
+
+
+class TaskResult(BaseModel):
+    """Per-task outcome from the desktop executor."""
+
+    action: str
+    success: bool
+    error_code: Optional[str] = Field(default=None, description="Stable machine-readable error, e.g. NOT_IMPLEMENTED.")
+    message: str = ""
+    artifacts: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RunCommandRequest(BaseModel):
+    command: ActionCommand
+
+
+class RunCommandResponse(BaseModel):
+    schema_version: str = Field(default=SCHEMA_VERSION)
+    overall_success: bool = Field(description="True when every task succeeded.")
+    results: List[TaskResult] = Field(default_factory=list)
