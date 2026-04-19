@@ -11,6 +11,10 @@ class Settings(BaseSettings):
 
     allowlist_path: str = ""
 
+    # LLM summary settings for Phase 2
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "llama3.2"
+
     model_config = SettingsConfigDict(
         env_prefix="EXECUTOR_",
         env_file=".env",

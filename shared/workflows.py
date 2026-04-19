@@ -37,6 +37,8 @@ class IntentType(str, Enum):
     STOP_MUSIC = "STOP_MUSIC"
     SYSTEM_CONTROL = "SYSTEM_CONTROL"
     FILE_OPERATION = "FILE_OPERATION"
+    FETCH_TECH_NEWS = "FETCH_TECH_NEWS"
+    FETCH_WORLD_NEWS = "FETCH_WORLD_NEWS"
     UNKNOWN = "UNKNOWN"
 
 
@@ -57,6 +59,8 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "STOP_MUSIC": "Bring Spotify to the foreground so you can pause/stop (OS media keys TBD).",
     "SYSTEM_CONTROL": "Volume, sleep, display — routed to SYSTEM_ACTION when implemented.",
     "FILE_OPERATION": "Copy/move/open files — routed to FILE_ACTION when implemented.",
+    "FETCH_TECH_NEWS": "Open latest tech news and summarize highlights.",
+    "FETCH_WORLD_NEWS": "Open global headlines and summarize highlights.",
 }
 
 
@@ -120,5 +124,13 @@ WORKFLOWS: dict[str, list[dict]] = {
     ],
     "FILE_OPERATION": [
         {"action": "FILE_ACTION", "target": None},
+    ],
+    "FETCH_TECH_NEWS": [
+        {"action": "OPEN_URL", "target": "https://tech.worldmonitor.app"},
+        {"action": "GET_HIGHLIGHTS", "target": "https://tech.worldmonitor.app"},
+    ],
+    "FETCH_WORLD_NEWS": [
+        {"action": "OPEN_URL", "target": "https://www.worldmonitor.app"},
+        {"action": "GET_HIGHLIGHTS", "target": "https://www.worldmonitor.app"},
     ],
 }

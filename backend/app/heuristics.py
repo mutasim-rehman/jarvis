@@ -64,6 +64,9 @@ _MOOD_PHRASES = (
     "focus vibe",
 )
 
+_NEWS_TECH_MARKERS = ("tech news", "technology news", "it news", "silicon valley", "gadget news")
+_NEWS_WORLD_MARKERS = ("world news", "global news", "international news", "headlines", "happening in the world")
+
 
 def _requests_academic_misconduct(t: str) -> bool:
     """User asks the assistant to do graded work for them — no execution workflow."""
@@ -158,6 +161,8 @@ def _has_domain_signal(t: str) -> bool:
     if _project_signal(t):
         return True
     if _open_app_match(t):
+        return True
+    if any(m in t for m in _NEWS_TECH_MARKERS + _NEWS_WORLD_MARKERS):
         return True
     return False
 
@@ -307,6 +312,12 @@ def classify_user_text(text: str) -> UserTextClassification:
         intent, target = open_hit
         return UserTextClassification(force_intent=intent, force_target=target)
 
+    if any(m in t for m in _NEWS_TECH_MARKERS):
+        return UserTextClassification(force_intent="FETCH_TECH_NEWS", force_target=None)
+    
+    if any(m in t for m in _NEWS_WORLD_MARKERS):
+        return UserTextClassification(force_intent="FETCH_WORLD_NEWS", force_target=None)
+
     return UserTextClassification()
 
 
@@ -338,4 +349,12 @@ def reconcile_llm_intent(user_text: str, intent: str, target: str | None) -> tup
             return open_hit[0], open_hit[1]
     if intent == "HANDLE_ASSIGNMENTS" and _vague_do_something(t) and not _has_assignment_signal(t):
         return "GENERAL_CHAT", None
+    
+    # News reconciliation
+    if intent in ("UNKNOWN", "GENERAL_CHAT", "OPEN_WEBSITE", "SEARCH_WEB"):
+        if any(m in t for m in _NEWS_TECH_MARKERS):
+            return "FETCH_TECH_NEWS", None
+        if any(m in t for m in _NEWS_WORLD_MARKERS):
+            return "FETCH_WORLD_NEWS", None
+            
     return intent, target
