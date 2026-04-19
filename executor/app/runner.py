@@ -6,6 +6,7 @@ from executor.app.allowlist import load_allowlist_config
 from executor.app.context import HandlerContext
 from executor.app.handlers.apps import handle_open_app
 from executor.app.handlers.fs import handle_create_folder
+from executor.app.handlers.music import handle_play_music
 from executor.app.handlers.web import handle_open_url
 
 _HANDLERS = {
@@ -13,6 +14,7 @@ _HANDLERS = {
     "OPEN_URL": handle_open_url,
     "OPEN_WEBSITE": handle_open_url,
     "CREATE_FOLDER": handle_create_folder,
+    "PLAY_MUSIC": handle_play_music,
 }
 
 
@@ -22,6 +24,8 @@ def normalize_tasks(cmd: ActionCommand) -> list[Task]:
     intent = (cmd.intent or "").strip()
     if intent == "OPEN_WEBSITE":
         return [Task(action="OPEN_URL", target=cmd.target)]
+    if intent == "PLAY_MUSIC":
+        return [Task(action="PLAY_MUSIC", target=cmd.target)]
     if intent == "FILE_OPERATION":
         return [Task(action="FILE_ACTION", target=cmd.target)]
     if intent == "SEARCH_WEB":

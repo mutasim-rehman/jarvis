@@ -102,6 +102,8 @@ def _has_assignment_signal(t: str) -> bool:
 def _music_play_signal(t: str) -> bool:
     if re.search(r"\b(stop|pause)\s+(the\s+)?(music|song|playlist)\b", t):
         return False
+    if re.search(r"\b(start|begin)\s+(the\s+)?music\b", t):
+        return True
     verbs = r"(play|listen\s+to|put\s+on|turn\s+on|queue)"
     nouns = r"(music|song|songs|playlist|album|track|tunes|radio)"
     if re.search(rf"\b{verbs}\b.{{0,40}}\b{nouns}\b", t):
@@ -170,6 +172,98 @@ def _music_app_target(t: str) -> str | None:
     return None
 
 
+def _strip_trailing_music_service(q: str) -> str:
+    return re.sub(r"\s+on\s+(spotify|apple music|youtube music|yt music)\s*$", "", q, flags=re.I).strip()
+
+
+def _music_spotify_target_from_text(raw_text: str) -> str | None:
+    """
+    Build executor `target` for PLAY_MUSIC.
+
+    Uses optional prefixes (executor parses them):
+    - ``track:...`` — a song title (opens search biased to tracks; click lower in results).
+    - ``artist:...`` — "music by …" / artist name (search ``artist:query``; click higher, avoid album tiles).
+    - Unprefixed — genre/style or generic search text.
+    """
+    tl = (raw_text or "").strip()
+    if not tl:
+        return None
+
+    def _clean(q: str) -> str | None:
+        q = _strip_trailing_music_service(q).strip(" \t.-_,;:!?\"'")
+        if len(q) < 1:
+            return None
+        low = q.lower()
+        if low in ("music", "songs", "song", "some music", "the music", "tunes"):
+            return None
+        return q
+
+    # --- Specific song / track (must run before broad "play …" / "music by …") ---
+    for pat in (
+        r'\bplay\s+the\s+song\s+"([^"]+)"',
+        r"\bplay\s+the\s+song\s+'([^']+)'",
+        r"\bplay\s+the\s+song\s+(.+)$",
+        r'\bplay\s+song\s+"([^"]+)"',
+        r"\bplay\s+song\s+'([^']+)'",
+        r"\bplay\s+song\s+(.+)$",
+        r"\bplay\s+the\s+track\s+(.+)$",
+    ):
+        m = re.search(pat, tl, re.I | re.MULTILINE)
+        if m:
+            c = _clean(m.group(1))
+            if c:
+                return f"track:{c}"
+
+    # --- Artist: "music by …" / "songs by …" ---
+    m = re.search(r"\b(?:play|listen\s+to|start|begin)\s+(?:some\s+)?music\s+by\s+(.+)$", tl, re.I)
+    if m:
+        c = _clean(m.group(1))
+        if c:
+            return f"artist:{c}"
+
+    m = re.search(r"\bplay\s+(?:some\s+)?(?:songs?|tracks?|albums?)\s+by\s+(.+)$", tl, re.I)
+    if m:
+        c = _clean(m.group(1))
+        if c:
+            return f"artist:{c}"
+
+    m = re.search(r"\bplay\s+(.+?)\s+on\s+spotify\s*$", tl, re.I)
+    if m:
+        c = _clean(m.group(1))
+        if c and c.lower() not in ("some", "my"):
+            return c
+
+    m = re.search(r"\blisten\s+to\s+(.+)$", tl, re.I)
+    if m:
+        c = _clean(m.group(1))
+        if c and c.lower() not in ("spotify", "apple music", "youtube music", "music"):
+            return c
+
+    m = re.search(r"\bput\s+on\s+(?:some\s+)?(.+)$", tl, re.I)
+    if m:
+        c = _clean(m.group(1))
+        if c:
+            return c
+
+    m = re.search(r"\bplay\s+some\s+(.+?)\s+music\b", tl, re.I)
+    if m:
+        c = _clean(m.group(1))
+        if c:
+            return c
+
+    m = re.search(
+        r"\bplay\s+(?!some\s)([a-z0-9][a-z0-9\s,'-]{0,48})\s+music\b",
+        tl,
+        re.I,
+    )
+    if m:
+        c = _clean(m.group(1))
+        if c:
+            return c
+
+    return None
+
+
 def classify_user_text(text: str) -> UserTextClassification:
     t = _lower(text)
     if not t:
@@ -188,6 +282,9 @@ def classify_user_text(text: str) -> UserTextClassification:
         return UserTextClassification(force_intent="STOP_MUSIC", force_target=None)
 
     if _music_play_signal(t) and not _project_signal(t):
+        q = _music_spotify_target_from_text(text)
+        if q:
+            return UserTextClassification(force_intent="PLAY_MUSIC", force_target=q)
         return UserTextClassification(
             force_intent="PLAY_MUSIC",
             force_target=_music_app_target(t),
@@ -227,7 +324,14 @@ def reconcile_llm_intent(user_text: str, intent: str, target: str | None) -> tup
     if intent in ("HANDLE_ASSIGNMENTS", "CHECK_ASSIGNMENTS") and _requests_academic_misconduct(t):
         return "GENERAL_CHAT", None
     if intent == "START_PROJECT" and _music_play_signal(t) and not _project_signal(t):
+        q = _music_spotify_target_from_text(user_text)
+        if q:
+            return "PLAY_MUSIC", q
         return "PLAY_MUSIC", _music_app_target(t)
+    if intent == "PLAY_MUSIC":
+        q = _music_spotify_target_from_text(user_text)
+        if q:
+            return "PLAY_MUSIC", q
     if intent in ("OPEN_WEBSITE", "SEARCH_WEB", "UNKNOWN"):
         open_hit = _open_app_match(t)
         if open_hit:

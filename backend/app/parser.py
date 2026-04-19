@@ -34,6 +34,7 @@ CRITICAL RULES:
 5. If the user mentions assignments, homework, or a coding/project setup, choose the matching intent.
 6. For listening to music, use PLAY_MUSIC (not START_PROJECT). For opening an app by name, prefer OPEN_APP with target set to that app.
 7. Never output action JSON if the user asks you to complete their graded homework, essays, or exams for them — answer conversationally only (no workflow).
+8. For PLAY_MUSIC: omit "target" (or null) when the user wants generic music — that plays their Liked Songs on Spotify. Treat "start music", "begin music", and "play music" the same. For **music by an artist**, set "target" to `artist:ArtistName` (e.g. `artist:The Beatles`). For **a specific song**, use `track:Song title` (e.g. `track:Duur`). Otherwise set "target" to a style/genre text (e.g. "jazz", "lo-fi") or plain artist/song search text.
 
 FORMAT FOR ACTIONS:
 <Conversational message>
@@ -57,6 +58,33 @@ Input: "play some music"
 Output: "Playing music for you.
 {{
   "intent": "PLAY_MUSIC"
+}}"
+
+Input: "start music"
+Output: "Starting music for you.
+{{
+  "intent": "PLAY_MUSIC"
+}}"
+
+Input: "play some jazz"
+Output: "I'll queue that up in Spotify.
+{{
+  "intent": "PLAY_MUSIC",
+  "target": "jazz"
+}}"
+
+Input: "play music by Radiohead"
+Output: "Playing Radiohead on Spotify.
+{{
+  "intent": "PLAY_MUSIC",
+  "target": "artist:Radiohead"
+}}"
+
+Input: "play the song Duur"
+Output: "Playing that track.
+{{
+  "intent": "PLAY_MUSIC",
+  "target": "track:Duur"
 }}"
 """
 

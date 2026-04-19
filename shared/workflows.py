@@ -9,7 +9,8 @@ How WORKFLOWS is used (see ``backend.app.parser._build_command``):
     pre-expanded ``tasks`` unless the model or caller supplies them.
 
 Executor reality (Phase 2 today — see ``executor.app.runner._HANDLERS``):
-  - Implemented: ``OPEN_APP``, ``OPEN_URL`` / ``OPEN_WEBSITE``, ``CREATE_FOLDER``.
+  - Implemented: ``OPEN_APP``, ``OPEN_URL`` / ``OPEN_WEBSITE``, ``CREATE_FOLDER``,
+    ``PLAY_MUSIC`` (Spotify ``spotify:`` URIs — Liked Songs or in-app search).
   - Everything else returns ``NOT_IMPLEMENTED`` until later phases.
 
 So each workflow should prefer those actions. Short placeholder steps that always
@@ -52,7 +53,7 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "FOCUS_MODE": "Minimal distraction-free prep: foreground the music app (media keys later).",
     "SEARCH_WEB": "Open a browser and a search entry point (full query automation later).",
     "OPEN_WEBSITE": "Open a specific URL or domain in the default browser.",
-    "PLAY_MUSIC": "Launch Spotify (or another music app via target override).",
+    "PLAY_MUSIC": "Spotify: Liked Songs when target is empty; otherwise search/play context for that query.",
     "STOP_MUSIC": "Bring Spotify to the foreground so you can pause/stop (OS media keys TBD).",
     "SYSTEM_CONTROL": "Volume, sleep, display — routed to SYSTEM_ACTION when implemented.",
     "FILE_OPERATION": "Copy/move/open files — routed to FILE_ACTION when implemented.",
@@ -107,9 +108,9 @@ WORKFLOWS: dict[str, list[dict]] = {
         {"action": "OPEN_APP", "target": "chrome"},
         {"action": "OPEN_URL", "target": None},
     ],
-    # Playback control is not in the executor yet; opening the app is the reliable step.
+    # Target None → Liked Songs; else Spotify in-app search for artist/song/style.
     "PLAY_MUSIC": [
-        {"action": "OPEN_APP", "target": "spotify"},
+        {"action": "PLAY_MUSIC", "target": None},
     ],
     "STOP_MUSIC": [
         {"action": "OPEN_APP", "target": "spotify"},

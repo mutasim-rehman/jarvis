@@ -19,6 +19,45 @@ def test_vague_phrase_suppresses():
 def test_play_music_forces():
     c = classify_user_text("play some music")
     assert c.force_intent == "PLAY_MUSIC"
+    assert c.force_target is None
+
+
+def test_start_music_forces_play_music():
+    c = classify_user_text("start music")
+    assert c.force_intent == "PLAY_MUSIC"
+    assert c.force_target is None
+
+
+def test_start_music_by_artist_extracts_query():
+    c = classify_user_text("start music by kishore kumar")
+    assert c.force_intent == "PLAY_MUSIC"
+    assert c.force_target == "artist:kishore kumar"
+
+
+def test_play_music_by_artist_extracts_query():
+    c = classify_user_text("play music by strings")
+    assert c.force_intent == "PLAY_MUSIC"
+    assert c.force_target == "artist:strings"
+
+
+def test_play_the_song_extracts_track_target():
+    c = classify_user_text('play the song "duur"')
+    assert c.force_intent == "PLAY_MUSIC"
+    assert c.force_target == "track:duur"
+    c2 = classify_user_text("play the song duur")
+    assert c2.force_target == "track:duur"
+
+
+def test_reconcile_play_music_prefers_extracted_query():
+    intent, target = reconcile_llm_intent("play music by Miles Davis", "PLAY_MUSIC", None)
+    assert intent == "PLAY_MUSIC"
+    assert target == "artist:Miles Davis"
+
+
+def test_reconcile_play_the_song_overrides_llm():
+    intent, target = reconcile_llm_intent("play the song duur", "PLAY_MUSIC", None)
+    assert intent == "PLAY_MUSIC"
+    assert target == "track:duur"
 
 
 def test_open_spotify_open_app():
