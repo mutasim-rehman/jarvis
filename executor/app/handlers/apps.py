@@ -13,18 +13,31 @@ from executor.app.context import HandlerContext
 def _windows_well_known_exe(canonical_name: str) -> Path | None:
     """Resolve common desktop apps that are rarely on PATH (e.g. Spotify installer build)."""
     name = canonical_name.lower().strip()
-    if name not in ("spotify", "spotify.exe"):
+    if name not in ("spotify", "spotify.exe", "arc", "arc.exe"):
         return None
     appdata = os.environ.get("APPDATA", "")
     local = os.environ.get("LOCALAPPDATA", "")
     program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
     program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-    candidates = [
-        Path(appdata) / "Spotify" / "Spotify.exe",
-        Path(local) / "Microsoft" / "WindowsApps" / "Spotify.exe",
-        Path(program_files) / "Spotify" / "Spotify.exe",
-        Path(program_files_x86) / "Spotify" / "Spotify.exe",
-    ]
+
+    app_map = {
+        "spotify": [
+            Path(appdata) / "Spotify" / "Spotify.exe",
+            Path(local) / "Microsoft" / "WindowsApps" / "Spotify.exe",
+            Path(program_files) / "Spotify" / "Spotify.exe",
+            Path(program_files_x86) / "Spotify" / "Spotify.exe",
+        ],
+        "arc": [
+            Path(local) / "Microsoft" / "WindowsApps" / "Arc.exe",
+            Path(local) / "Arc" / "Arc.exe",
+            Path(program_files) / "Arc" / "Arc.exe",
+        ]
+    }
+    
+    # Handle both "app" and "app.exe"
+    app_key = name.replace(".exe", "")
+    candidates = app_map.get(app_key, [])
+    
     for c in candidates:
         try:
             if c.is_file():

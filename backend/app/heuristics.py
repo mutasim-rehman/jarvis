@@ -30,6 +30,8 @@ _ASSIGNMENT_MARKERS = (
     "lms",
     "canvas",
     "moodle",
+    "assingment",
+    "assingments",
 )
 
 _PROJECT_START_MARKERS = (

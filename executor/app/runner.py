@@ -7,13 +7,14 @@ from executor.app.context import HandlerContext
 from executor.app.handlers.apps import handle_open_app
 from executor.app.handlers.fs import handle_create_folder
 from executor.app.handlers.music import handle_play_music
-from executor.app.handlers.web import handle_get_highlights, handle_open_url
+from executor.app.handlers.web import handle_get_assignments, handle_get_highlights, handle_open_url
 
 _HANDLERS = {
     "OPEN_APP": handle_open_app,
     "OPEN_URL": handle_open_url,
     "OPEN_WEBSITE": handle_open_url,
     "GET_HIGHLIGHTS": handle_get_highlights,
+    "GET_ASSIGNMENTS": handle_get_assignments,
     "CREATE_FOLDER": handle_create_folder,
     "PLAY_MUSIC": handle_play_music,
 }

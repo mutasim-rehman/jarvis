@@ -48,11 +48,11 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "CLOSE_APP": "Close or quit an application (handler TBD).",
     "CHECK_ASSIGNMENTS": "Open the LMS in a browser to review pending work.",
     "HANDLE_ASSIGNMENTS": "Open class workspace, ensure a local folder, and open the editor.",
-    "START_PROJECT": "Typical coding session setup: music app + editor.",
+    "START_PROJECT": "Jump into a coding session with your editor.",
     "CREATE_PROJECT": "Create a project directory under the executor workspace and open the editor.",
     "RESUME_PROJECT": "Jump back into the editor for ongoing work.",
     "STUDY_MODE": "Notes + browser + a simple focus timer in the browser.",
-    "FOCUS_MODE": "Minimal distraction-free prep: foreground the music app (media keys later).",
+    "FOCUS_MODE": "Minimal distraction-free prep: foreground the editor.",
     "SEARCH_WEB": "Open a browser and a search entry point (full query automation later).",
     "OPEN_WEBSITE": "Open a specific URL or domain in the default browser.",
     "PLAY_MUSIC": "Spotify: Liked Songs when target is empty; otherwise search/play context for that query.",
@@ -73,19 +73,21 @@ WORKFLOWS: dict[str, list[dict]] = {
         {"action": "CLOSE_APP", "target": None},
     ],
     # Use a real domain so OPEN_URL succeeds without a url_aliases entry ("gcr" alone fails).
+    # Use Arc primary profile with account /u/1/
     "CHECK_ASSIGNMENTS": [
-        {"action": "OPEN_APP", "target": "chrome"},
-        {"action": "OPEN_URL", "target": "classroom.google.com"},
+        {"action": "OPEN_APP", "target": "arc"},
+        {"action": "OPEN_URL", "target": "https://classroom.google.com/u/1/a/not-turned-in/all"},
+        {"action": "GET_ASSIGNMENTS", "target": "https://classroom.google.com/u/1/a/not-turned-in/all"},
     ],
-    # Pragmatic path: browser → class site → workspace folder → editor. Scraping/login are Phase 6+.
+    # Pragmatic path: browser → classroom → scrape assignments → workspace setup.
     "HANDLE_ASSIGNMENTS": [
-        {"action": "OPEN_APP", "target": "chrome"},
-        {"action": "OPEN_URL", "target": "classroom.google.com"},
+        {"action": "OPEN_APP", "target": "arc"},
+        {"action": "OPEN_URL", "target": "https://classroom.google.com/u/1/a/not-turned-in/all"},
+        {"action": "GET_ASSIGNMENTS", "target": "https://classroom.google.com/u/1/a/not-turned-in/all"},
         {"action": "CREATE_FOLDER", "target": "assignments/latest"},
         {"action": "OPEN_APP", "target": "cursor"},
     ],
     "START_PROJECT": [
-        {"action": "OPEN_APP", "target": "spotify"},
         {"action": "OPEN_APP", "target": "cursor"},
     ],
     "CREATE_PROJECT": [
@@ -101,7 +103,7 @@ WORKFLOWS: dict[str, list[dict]] = {
         {"action": "OPEN_URL", "target": "https://pomofocus.io"},
     ],
     "FOCUS_MODE": [
-        {"action": "OPEN_APP", "target": "spotify"},
+        {"action": "OPEN_APP", "target": "cursor"},
     ],
     # google.com as a stable entry; intent target can still name a preferred engine in copy.
     "SEARCH_WEB": [
