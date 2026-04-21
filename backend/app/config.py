@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Phase 3: Integration with executor
     executor_base_url: str = "http://127.0.0.1:8001"
     executor_api_key: str = ""
-    executor_timeout_seconds: float = 30.0
+    executor_timeout_seconds: float = 120.0
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

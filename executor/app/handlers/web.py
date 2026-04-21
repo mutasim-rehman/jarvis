@@ -255,127 +255,111 @@ def handle_get_highlights(task: Task, ctx: HandlerContext) -> TaskResult:
     except Exception as e:
         return TaskResult(
             action=task.action,
-            success=False,
-            error_code="SCRAPE_FAILED",
-            message=f"Failed to fetch news highlights: {e}",
-            artifacts={"url": url},
-        )
+                error_code="SCRAPE_FAILED",
+                message=f"Failed to fetch news highlights: {e}",
+                artifacts={"url": url},
+            )
 
 
 def handle_get_assignments(task: Task, ctx: HandlerContext) -> TaskResult:
-    """Fetch Classroom content locally by copying text from the open browser."""
+    """Fetch assignments from Google Classroom REST API — no browser, no clipboard."""
     del ctx
-    url = (task.target or "").strip()
-    
-    # We wait for the browser to actually load the page after OPEN_URL
-    # 5 seconds is usually enough, but let's be generous
-    time.sleep(6.0)
 
     try:
         from executor.app.config import settings
+        from executor.app.auth.google import get_access_token, CLASSROOM_SCOPES
 
-        # 1. Focus Arc and copy all text to clipboard
-        # We also click in the center to ensure the webpage content has focus
-        try:
-             # Click roughly in the middle of the browser
-             ctypes.windll.user32.SetCursorPos(600, 500)
-             time.sleep(0.1)
-             # MOUSEEVENTF_LEFTDOWN = 0x0002, MOUSEEVENTF_LEFTUP = 0x0004
-             ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)
-             time.sleep(0.05)
-             ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)
-             time.sleep(0.2)
-        except Exception:
-             pass
+        token = get_access_token(CLASSROOM_SCOPES)
+        headers = {"Authorization": f"Bearer {token}"}
+        api = "https://classroom.googleapis.com/v1"
 
-        ps_copy = """
-        $wshell = New-Object -ComObject WScript.Shell;
-        $procs = Get-Process Arc -ErrorAction SilentlyContinue;
-        if ($procs) {
-            foreach ($p in $procs) {
-                if ($p.MainWindowTitle) {
-                    if ($wshell.AppActivate($p.Id)) {
-                        Start-Sleep -m 800
-                        $wshell.SendKeys("^a") # Ctrl+A
-                        Start-Sleep -m 400
-                        $wshell.SendKeys("^c") # Ctrl+C
-                        Start-Sleep -m 400
-                        Write-Output "COPIED"
-                        return
-                    }
-                }
-            }
-        }
-        """
-        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_copy], capture_output=True, text=True)
-        
-        if "COPIED" not in res.stdout.upper():
-             return TaskResult(
-                action=task.action,
-                success=True,
-                message="I've opened the page. (Note: I couldn't focus the Arc window to read the assignments automatically).",
-                artifacts={"url": url}
-            )
+        with httpx.Client(timeout=30.0) as client:
+            # 1. List active courses
+            courses_resp = client.get(f"{api}/courses", headers=headers, params={"courseStates": "ACTIVE"})
+            courses_resp.raise_for_status()
+            courses: list[dict] = courses_resp.json().get("courses", [])
 
-        # 2. Get the content from the clipboard
-        # We use -Raw to get everything exactly as is
-        clip_res = subprocess.run(["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"], capture_output=True, text=True, encoding="utf-8")
-        raw_text = clip_res.stdout.strip()
+            if not courses:
+                return TaskResult(
+                    action=task.action,
+                    success=True,
+                    message="No active courses found in Google Classroom.",
+                )
 
-        # If it's very short, it's likely just a few characters or UI junk
-        if len(raw_text) < 20:
+            # 2. For each course, fetch coursework and filter for incomplete submissions
+            pending: list[dict] = []
+            for course in courses:
+                cid = course["id"]
+                cname = course.get("name", cid)
+
+                # Get all coursework (assignments)
+                cw_resp = client.get(
+                    f"{api}/courses/{cid}/courseWork",
+                    headers=headers,
+                    params={"courseWorkStates": "PUBLISHED", "orderBy": "dueDate asc"},
+                )
+                if cw_resp.status_code != 200:
+                    continue
+                coursework: list[dict] = cw_resp.json().get("courseWork", [])
+
+                for cw in coursework:
+                    cwid = cw["id"]
+                    # Get my submission status for this assignment
+                    sub_resp = client.get(
+                        f"{api}/courses/{cid}/courseWork/{cwid}/studentSubmissions",
+                        headers=headers,
+                        params={"userId": "me"},
+                    )
+                    if sub_resp.status_code != 200:
+                        continue
+                    subs: list[dict] = sub_resp.json().get("studentSubmissions", [])
+                    for sub in subs:
+                        state = sub.get("state", "")
+                        # Only include not yet turned in
+                        if state not in ("TURNED_IN", "RETURNED"):
+                            due = cw.get("dueDate")
+                            due_str = ""
+                            if due:
+                                due_str = f"{due.get('year', '?')}-{due.get('month', '?'):02}-{due.get('day', '?'):02}"
+                                if cw.get("dueTime"):
+                                    t = cw["dueTime"]
+                                    due_str += f" {t.get('hours', 0):02}:{t.get('minutes', 0):02}"
+                            pending.append({
+                                "course": cname,
+                                "title": cw.get("title", "Untitled"),
+                                "due": due_str or "No due date",
+                                "state": state,
+                                "link": cw.get("alternateLink", ""),
+                            })
+
+        if not pending:
             return TaskResult(
                 action=task.action,
                 success=True,
-                message="I've opened the page, but I couldn't find any assignment text. Please check if you are logged in!",
-                artifacts={"url": url, "captured_length": len(raw_text)}
+                message="You have no pending assignments in Google Classroom. You're all caught up! 🎉",
             )
 
-        # 3. Process with Ollama
-        text_context = raw_text[:4000] # Reduced context to avoid out-of-memory 500 errors
-        prompt = (
-            "You are JARVIS, a professional assistant. Below is the text content copied from a Google Classroom 'To-do' page. "
-            "Extract the names of all pending assignments and their due dates. "
-            "If it says 'CL2001-Lab' or similar, include it. "
-            "Format them as a clean numbered list. "
-            "At the end, ask the user: 'Which one would you like to start with?'\n\n"
-            "CONTENT:\n"
-            f"{text_context}"
-        )
-
-        try:
-            with httpx.Client(timeout=120.0) as client:
-                chat_payload = {
-                    "model": settings.ollama_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                    "options": {
-                        "num_ctx": 4096
-                    }
-                }
-                ollama_resp = client.post(
-                    f"{settings.ollama_base_url}/api/chat",
-                    json=chat_payload,
-                )
-                if ollama_resp.status_code == 200:
-                    msg = ollama_resp.json().get("message", {}).get("content", "").strip()
-                else:
-                    msg = f"I've opened the assignments. (Summarization failed with status {ollama_resp.status_code}, but the page is ready in your browser)."
-        except Exception as e:
-            msg = f"I've opened the assignments. (Summarization error: {e})"
+        # 3. Format the list
+        lines = ["Here are your pending assignments:\n"]
+        for i, a in enumerate(pending, 1):
+            lines.append(f"{i}. [{a['course']}] {a['title']}")
+            lines.append(f"   Due: {a['due']}  |  Status: {a['state']}")
+            if a["link"]:
+                lines.append(f"   Link: {a['link']}")
+        lines.append("\nWhich one would you like to start with?")
+        msg = "\n".join(lines)
 
         return TaskResult(
             action=task.action,
             success=True,
             message=msg,
-            artifacts={"url": url, "text_length": len(raw_text), "clipboard_snippet": raw_text[:200]},
+            artifacts={"pending_count": len(pending), "assignments": pending},
         )
 
     except Exception as e:
         return TaskResult(
             action=task.action,
             success=False,
-            error_code="SCRAPE_FAILED",
-            message=f"Failed to process assignments locally: {e}",
-            artifacts={"url": url},
+            error_code="CLASSROOM_ERROR",
+            message=f"Failed to fetch assignments from Google Classroom API: {e}",
         )

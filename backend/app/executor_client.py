@@ -26,25 +26,28 @@ class ExecutorClient:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = client.post(url, json=payload, headers=self.headers)
-                # Note: httpx.AsyncClient returns a coroutine for post, but wait...
-                # I should use 'await client.post(...)'
-                res = await response
+                res = await client.post(url, json=payload, headers=self.headers)
                 
                 if res.status_code == 401:
-                    logger.error("Executor authentication failed (401).")
+                    logger.error("Executor auth failed (401).")
                     return None
                 
                 res.raise_for_status()
-                return RunCommandResponse(**res.json())
-        except httpx.ConnectError:
-            logger.error(f"Could not connect to executor at {url}. Is it running?")
+                data = res.json()
+                try:
+                    return RunCommandResponse(**data)
+                except Exception as ve:
+                    logger.error(f"Executor response schema mismatch: {ve}")
+                    logger.error(f"Raw response: {data}")
+                    return None
+        except httpx.ReadTimeout:
+            logger.error(f"Executor timed out after {self.timeout}s")
             return None
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Executor returned error {e.response.status_code}: {e.response.text}")
+        except httpx.ConnectError:
+            logger.error(f"Could not connect to executor at {url}")
             return None
         except Exception as e:
-            logger.exception(f"Unexpected error calling executor: {e}")
+            logger.exception(f"Unexpected executor client error: {e}")
             return None
 
 executor_client = ExecutorClient(

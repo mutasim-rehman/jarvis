@@ -13,7 +13,7 @@ from executor.app.context import HandlerContext
 def _windows_well_known_exe(canonical_name: str) -> Path | None:
     """Resolve common desktop apps that are rarely on PATH (e.g. Spotify installer build)."""
     name = canonical_name.lower().strip()
-    if name not in ("spotify", "spotify.exe", "arc", "arc.exe"):
+    if name not in ("spotify", "spotify.exe", "arc", "arc.exe", "antigravity", "antigravity.exe"):
         return None
     appdata = os.environ.get("APPDATA", "")
     local = os.environ.get("LOCALAPPDATA", "")
@@ -31,7 +31,11 @@ def _windows_well_known_exe(canonical_name: str) -> Path | None:
             Path(local) / "Microsoft" / "WindowsApps" / "Arc.exe",
             Path(local) / "Arc" / "Arc.exe",
             Path(program_files) / "Arc" / "Arc.exe",
-        ]
+        ],
+        "antigravity": [
+            Path(local) / "Programs" / "Antigravity" / "Antigravity.exe",
+            Path(program_files) / "Antigravity" / "Antigravity.exe",
+        ],
     }
     
     # Handle both "app" and "app.exe"

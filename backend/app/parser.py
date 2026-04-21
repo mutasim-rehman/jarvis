@@ -37,6 +37,7 @@ CRITICAL RULES:
 8. For PLAY_MUSIC: omit "target" (or null) when the user wants generic music — that plays their Liked Songs on Spotify. Treat "start music", "begin music", and "play music" the same. For **music by an artist**, set "target" to `artist:ArtistName` (e.g. `artist:The Beatles`). For **a specific song**, use `track:Song title` (e.g. `track:Duur`). Otherwise set "target" to a style/genre text (e.g. "jazz", "lo-fi") or plain artist/song search text.
 9. For **Tech News**, use `FETCH_TECH_NEWS`.
 10. For **World News**, use `FETCH_WORLD_NEWS`.
+11. For **DO_ASSIGNMENT**: use when the user wants to START or WORK ON a specific assignment from their list. Set "target" to the assignment number or name. If the user mentions "gemini" or "antigravity", append "|gemini" or "|antigravity" to the target (e.g. "17|gemini"). Default to "gemini" if unspecified.
 
 FORMAT FOR ACTIONS:
 <Conversational message>
@@ -66,6 +67,27 @@ Input: "do my assignment"
 Output: "Alright, I'll set everything up for your assignments.
 {{
   "intent": "HANDLE_ASSIGNMENTS"
+}}"
+
+Input: "start assignment 5 with gemini"
+Output: "Setting up assignment 5 with Gemini.
+{{
+  "intent": "DO_ASSIGNMENT",
+  "target": "5|gemini"
+}}"
+
+Input: "do assignment 17"
+Output: "Opening assignment 17 for you.
+{{
+  "intent": "DO_ASSIGNMENT",
+  "target": "17|gemini"
+}}"
+
+Input: "start the data structures project with antigravity"
+Output: "Opening that in Antigravity for you.
+{{
+  "intent": "DO_ASSIGNMENT",
+  "target": "data structures project|antigravity"
 }}"
 
 Input: "play some music"

@@ -3,6 +3,7 @@ from pathlib import Path
 from shared.schema import Task, TaskResult
 
 from executor.app.allowlist import is_path_under_roots
+from executor.app.config import settings
 from executor.app.context import HandlerContext
 
 
@@ -28,7 +29,16 @@ def handle_create_folder(task: Task, ctx: HandlerContext) -> TaskResult:
     if raw.is_absolute():
         resolved = raw
     else:
-        resolved = (ctx.path_roots[0] / raw).resolve()
+        # Smart routing: 'assignments/...' -> Assignment_Location, 'projects/...' -> Project_Location
+        parts = raw.parts
+        if parts[0] == "assignments" and settings.assignment_location:
+            base = Path(settings.assignment_location.strip().strip('"').strip("'")).expanduser().resolve()
+            resolved = (base / Path(*parts[1:])).resolve()
+        elif parts[0] == "projects" and settings.project_location:
+            base = Path(settings.project_location.strip().strip('"').strip("'")).expanduser().resolve()
+            resolved = (base / Path(*parts[1:])).resolve()
+        else:
+            resolved = (ctx.path_roots[0] / raw).resolve()
 
     if not is_path_under_roots(resolved, ctx.path_roots):
         return TaskResult(

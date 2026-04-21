@@ -26,6 +26,7 @@ class IntentType(str, Enum):
     CLOSE_APP = "CLOSE_APP"
     HANDLE_ASSIGNMENTS = "HANDLE_ASSIGNMENTS"
     CHECK_ASSIGNMENTS = "CHECK_ASSIGNMENTS"
+    DO_ASSIGNMENT = "DO_ASSIGNMENT"
     START_PROJECT = "START_PROJECT"
     CREATE_PROJECT = "CREATE_PROJECT"
     RESUME_PROJECT = "RESUME_PROJECT"
@@ -47,6 +48,7 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "OPEN_APP": "Launch a desktop application by shortcut name (from allowlist) or path.",
     "CLOSE_APP": "Close or quit an application (handler TBD).",
     "CHECK_ASSIGNMENTS": "Open the LMS in a browser to review pending work.",
+    "DO_ASSIGNMENT": "Fetch an assignment by number/name from the last Classroom list, generate starter files with Gemini or open in Antigravity IDE.",
     "HANDLE_ASSIGNMENTS": "Open class workspace, ensure a local folder, and open the editor.",
     "START_PROJECT": "Jump into a coding session with your editor.",
     "CREATE_PROJECT": "Create a project directory under the executor workspace and open the editor.",
@@ -65,6 +67,10 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
 
 
 WORKFLOWS: dict[str, list[dict]] = {
+    # Single-task: target = assignment number or title; ai_tool = 'gemini' | 'antigravity'
+    "DO_ASSIGNMENT": [
+        {"action": "DO_ASSIGNMENT", "target": None},
+    ],
     # Single-slot intents: target None → user's app/query from JSON.
     "OPEN_APP": [
         {"action": "OPEN_APP", "target": None},

@@ -3,8 +3,10 @@ from pathlib import Path
 from shared.schema import ActionCommand, RunCommandResponse, Task, TaskResult
 
 from executor.app.allowlist import load_allowlist_config
+from executor.app.config import settings
 from executor.app.context import HandlerContext
 from executor.app.handlers.apps import handle_open_app
+from executor.app.handlers.assignment import handle_do_assignment
 from executor.app.handlers.fs import handle_create_folder
 from executor.app.handlers.music import handle_play_music
 from executor.app.handlers.web import handle_get_assignments, handle_get_highlights, handle_open_url
@@ -15,6 +17,7 @@ _HANDLERS = {
     "OPEN_WEBSITE": handle_open_url,
     "GET_HIGHLIGHTS": handle_get_highlights,
     "GET_ASSIGNMENTS": handle_get_assignments,
+    "DO_ASSIGNMENT": handle_do_assignment,
     "CREATE_FOLDER": handle_create_folder,
     "PLAY_MUSIC": handle_play_music,
 }
@@ -39,6 +42,16 @@ def normalize_tasks(cmd: ActionCommand) -> list[Task]:
 
 def build_context(allowlist_file: Path | None) -> HandlerContext:
     roots, apps, url_aliases = load_allowlist_config(allowlist_file)
+    
+    # Add project and assignment locations as allowed roots
+    for loc in [settings.assignment_location, settings.project_location]:
+        if loc:
+            cleaned = loc.strip().strip('"').strip("'")
+            if cleaned:
+                p = Path(cleaned).expanduser().resolve()
+                if p not in roots:
+                    roots.append(p)
+    
     return HandlerContext(path_roots=roots, apps=apps, url_aliases=url_aliases)
 
 

@@ -34,6 +34,14 @@ _ASSIGNMENT_MARKERS = (
     "assingments",
 )
 
+# Patterns that mean "pick and work on a specific assignment"
+_DO_ASSIGNMENT_VERBS = re.compile(
+    r"\b(do|start|begin|work\s+on|open|code|work|complete)\s+(assignment|task|number|the|it|that)\b"
+    r"|\bstart\s+number\b"
+    r"|\b(do|start|begin|work\s+on|complete)\s+#?\d+\b",
+    re.I,
+)
+
 _PROJECT_START_MARKERS = (
     "start project",
     "project setup",
@@ -100,6 +108,50 @@ def _lower(s: str) -> str:
     return s.strip().lower()
 
 
+def _do_assignment_signal(t: str) -> bool:
+    """True when user wants to start/work on a specific assignment."""
+    if _DO_ASSIGNMENT_VERBS.search(t):
+        return True
+    # "assignment 5", "assignment: data structures"
+    if re.search(r"\bassignment\s+(\d+|\w.{0,40})", t, re.I):
+        return True
+    return False
+
+
+def _extract_assignment_ref(raw: str) -> str | None:
+    """
+    Extract the assignment reference (number or title fragment) from user text.
+    Returns e.g. '17', 'CS2001-Project', 'data structures project'.
+    """
+    t = raw.strip()
+    # "assignment 17", "number 17", "assignment #5"
+    m = re.search(r"\b(?:assignment|number|#)\s*#?(\d+)\b", t, re.I)
+    if m:
+        return m.group(1)
+    # "do the data structures project"
+    m = re.search(
+        r"\b(?:do|start|begin|work\s+on|complete)\s+(?:the\s+|number\s+)?(.{3,60})\b",
+        t.rstrip("."),
+        re.I,
+    )
+    if m:
+        ref = m.group(1).strip()
+        # strip trailing ai_tool mention
+        ref = re.sub(r"\s+(?:with|using|via|in)\s+(?:gemini|antigravity|vs\s*code|vscode)\s*$", "", ref, flags=re.I).strip()
+        if len(ref) > 1:
+            return ref
+    return None
+
+
+def _extract_ai_tool(t: str) -> str | None:
+    """Return 'gemini' or 'antigravity' if the user specifies a tool."""
+    if re.search(r"\b(antigravity|anti.gravity|antigrav)\b", t, re.I):
+        return "antigravity"
+    if re.search(r"\bgemini\b", t, re.I):
+        return "gemini"
+    return None
+
+
 def _has_assignment_signal(t: str) -> bool:
     return any(m in t for m in _ASSIGNMENT_MARKERS)
 
@@ -156,7 +208,7 @@ def _vague_do_something(t: str) -> bool:
 
 
 def _has_domain_signal(t: str) -> bool:
-    if _has_assignment_signal(t):
+    if _has_assignment_signal(t) or _do_assignment_signal(t):
         return True
     if _music_play_signal(t) or _stop_music_signal(t):
         return True
@@ -297,10 +349,25 @@ def classify_user_text(text: str) -> UserTextClassification:
             force_target=_music_app_target(t),
         )
 
-    if _has_assignment_signal(t):
+    if _has_assignment_signal(t) or _do_assignment_signal(t):
+        # User is starting/working on a specific assignment
+        if _do_assignment_signal(t):
+            ref = _extract_assignment_ref(text) or _extract_assignment_ref(t)
+            ai_tool = _extract_ai_tool(t)
+            target = ref  # handler resolves by index or title
+            # Encode ai_tool into target so it survives the single-field schema:
+            # format: "<ref>|<tool>"  e.g. "17|gemini"  or  "CS2001-Project|antigravity"
+            if target and ai_tool:
+                target = f"{target}|{ai_tool}"
+            elif ai_tool and not target:
+                target = f"|{ai_tool}"
+            return UserTextClassification(force_intent="DO_ASSIGNMENT", force_target=target)
+        
         if any(k in t for k in ("check", "what's due", "whats due", "what is due", "pending", "do i have")):
             return UserTextClassification(force_intent="CHECK_ASSIGNMENTS", force_target=None)
-        return UserTextClassification(force_intent="HANDLE_ASSIGNMENTS", force_target=None)
+        
+        if _has_assignment_signal(t):
+            return UserTextClassification(force_intent="HANDLE_ASSIGNMENTS", force_target=None)
 
     if _project_signal(t):
         if any(m in t for m in _PROJECT_RESUME_MARKERS):
@@ -325,7 +392,7 @@ def classify_user_text(text: str) -> UserTextClassification:
 
 def should_drop_workflow_without_domain(user_text: str, intent: str) -> bool:
     """Safety net: block heavy workflows when user text has no domain cues."""
-    heavy = {"HANDLE_ASSIGNMENTS", "CHECK_ASSIGNMENTS", "START_PROJECT", "CREATE_PROJECT", "RESUME_PROJECT"}
+    heavy = {"HANDLE_ASSIGNMENTS", "CHECK_ASSIGNMENTS", "DO_ASSIGNMENT", "START_PROJECT", "CREATE_PROJECT", "RESUME_PROJECT"}
     if intent not in heavy:
         return False
     return not _has_domain_signal(_lower(user_text))
