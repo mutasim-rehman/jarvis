@@ -77,3 +77,12 @@ class RunCommandResponse(BaseModel):
     schema_version: str = Field(default=SCHEMA_VERSION)
     overall_success: bool = Field(description="True when every task succeeded.")
     results: List[TaskResult] = Field(default_factory=list)
+
+
+class InteractResponse(BaseModel):
+    """Phase 3: Unified response containing both intent and execution results."""
+
+    schema_version: str = Field(default=SCHEMA_VERSION)
+    assistant_response: AssistantResponse
+    execution_result: Optional[RunCommandResponse] = None
+    original_text: str
