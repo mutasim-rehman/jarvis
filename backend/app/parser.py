@@ -232,25 +232,38 @@ def _wrap(message: str, command: ActionCommand | None) -> AssistantResponse:
 
 
 async def parse_intent(text: str) -> AssistantResponse:
+    cls = classify_user_text(text)
+
+    # Fast-path deterministic intents so common desktop commands still work
+    # even if LLM/Ollama is unavailable.
+    if cls.suppress_structured_command:
+        return _wrap("Sure — what would you like to do?", None)
+
+    if cls.force_intent:
+        cmd = _build_command(cls.force_intent, cls.force_target)
+        return _wrap("On it.", cmd)
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.strip()},
         {"role": "user", "content": text},
     ]
 
-    response = await generate_chat(messages=messages)
-    content = response.get("message", {}).get("content", "").strip()
-
-    cls = classify_user_text(text)
-    base_message = _extract_conversational_message(content) if content else ""
-
-    if cls.suppress_structured_command:
-        msg = base_message or "Sure — what would you like to do?"
-        return _wrap(msg, None)
-
-    if cls.force_intent:
-        cmd = _build_command(cls.force_intent, cls.force_target)
-        msg = base_message or "On it."
-        return _wrap(msg, cmd)
+    base_message = ""
+    content = ""
+    try:
+        response = await generate_chat(messages=messages)
+        content = response.get("message", {}).get("content", "").strip()
+        base_message = _extract_conversational_message(content) if content else ""
+    except RuntimeError:
+        # Graceful fallback when Ollama is down/unreachable.
+        fb_intent, fb_target = _fallback_intent_from_user_text(text)
+        if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
+            cmd = _build_command(fb_intent, fb_target)
+            return _wrap("On it.", cmd)
+        return _wrap(
+            "I couldn't reach the local model right now. Please start Ollama and try again.",
+            None,
+        )
 
     json_start = content.find("{")
     if json_start != -1:
