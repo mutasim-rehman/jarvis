@@ -40,6 +40,7 @@ class IntentType(str, Enum):
     FILE_OPERATION = "FILE_OPERATION"
     FETCH_TECH_NEWS = "FETCH_TECH_NEWS"
     FETCH_WORLD_NEWS = "FETCH_WORLD_NEWS"
+    WATCH_VIDEO = "WATCH_VIDEO"
     UNKNOWN = "UNKNOWN"
 
 
@@ -63,6 +64,7 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "FILE_OPERATION": "Copy/move/open files — routed to FILE_ACTION when implemented.",
     "FETCH_TECH_NEWS": "Open latest tech news and summarize highlights.",
     "FETCH_WORLD_NEWS": "Open global headlines and summarize highlights.",
+    "WATCH_VIDEO": "Search for and play a video on YouTube based on the user's query.",
 }
 
 
@@ -140,5 +142,8 @@ WORKFLOWS: dict[str, list[dict]] = {
     "FETCH_WORLD_NEWS": [
         {"action": "OPEN_URL", "target": "https://www.worldmonitor.app"},
         {"action": "GET_HIGHLIGHTS", "target": "https://www.worldmonitor.app"},
+    ],
+    "WATCH_VIDEO": [
+        {"action": "WATCH_VIDEO", "target": None},
     ],
 }

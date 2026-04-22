@@ -63,6 +63,7 @@ _PROJECT_RESUME_MARKERS = (
     "finish the project",
     "wrap up this project",
     "wrap up the project",
+    "finish up",
 )
 
 _MOOD_PHRASES = (
@@ -76,6 +77,17 @@ _MOOD_PHRASES = (
 
 _NEWS_TECH_MARKERS = ("tech news", "technology news", "it news", "silicon valley", "gadget news")
 _NEWS_WORLD_MARKERS = ("world news", "global news", "international news", "headlines", "happening in the world")
+_VIDEO_MARKERS = ("video", "clip", "clips", "watch", "youtube", "tutorial", "episode")
+
+_VIDEO_VERBS = (
+    "watch",
+    "play clips of",
+    "play clips",
+    "youtube",
+    "show videos of",
+    "show video of",
+    "videos of",
+)
 
 
 def _requests_academic_misconduct(t: str) -> bool:
@@ -184,6 +196,19 @@ def _project_signal(t: str) -> bool:
     return False
 
 
+def _video_play_signal(t: str) -> bool:
+    if any(m in t for m in ("play clips of", "play clips", "show videos of", "show video of", "videos of")):
+        return True
+    if re.search(r"\bplay\b.{0,40}\b(clips?|videos?|youtube)\b", t):
+        return True
+    if re.search(r"\bwatch\b", t) and not re.search(r"\b(song|music|album|track|spotify)\b", t):
+        if "play" not in t or any(w in t for w in ("video", "youtube", "clip")):
+            return True
+    if "youtube" in t and not re.search(r"\b(song|music|album|track|spotify)\b", t):
+        return True
+    return False
+
+
 def _open_app_match(t: str) -> tuple[str, str] | None:
     m = re.search(
         r"\b(open|launch|start)\s+([a-z][a-z0-9]*(?:\s+[a-z][a-z0-9]*)?)\b",
@@ -213,6 +238,8 @@ def _has_domain_signal(t: str) -> bool:
     if _music_play_signal(t) or _stop_music_signal(t):
         return True
     if _project_signal(t):
+        return True
+    if _video_play_signal(t):
         return True
     if _open_app_match(t):
         return True
@@ -259,28 +286,26 @@ def _music_spotify_target_from_text(raw_text: str) -> str | None:
 
     # --- Specific song / track (must run before broad "play …" / "music by …") ---
     for pat in (
-        r'\bplay\s+the\s+song\s+"([^"]+)"',
-        r"\bplay\s+the\s+song\s+'([^']+)'",
-        r"\bplay\s+the\s+song\s+(.+)$",
-        r'\bplay\s+song\s+"([^"]+)"',
-        r"\bplay\s+song\s+'([^']+)'",
-        r"\bplay\s+song\s+(.+)$",
-        r"\bplay\s+the\s+track\s+(.+)$",
+        r'\bplay\s+(?:the\s+|a\s+)?song\s+"([^"]+)"(?:\s+by\s+(.+))?',
+        r"\bplay\s+(?:the\s+|a\s+)?song\s+'([^']+)'(?:\s+by\s+(.+))?",
+        r"\bplay\s+(?:the\s+|a\s+)?song\s+(?!by\s)(.+)$",
+        r"\bplay\s+the\s+track\s+(?!by\s)(.+)$",
     ):
         m = re.search(pat, tl, re.I | re.MULTILINE)
         if m:
             c = _clean(m.group(1))
+            artist = _clean(m.group(2)) if len(m.groups()) > 1 and m.group(2) else None
             if c:
-                return f"track:{c}"
+                return f"track:{c} {artist}" if artist else f"track:{c}"
 
     # --- Artist: "music by …" / "songs by …" ---
-    m = re.search(r"\b(?:play|listen\s+to|start|begin)\s+(?:some\s+)?music\s+by\s+(.+)$", tl, re.I)
+    m = re.search(r"\b(?:play|listen\s+to|start|begin)\s+(?:some\s+|a\s+)?music\s+by\s+(.+)$", tl, re.I)
     if m:
         c = _clean(m.group(1))
         if c:
             return f"artist:{c}"
 
-    m = re.search(r"\bplay\s+(?:some\s+)?(?:songs?|tracks?|albums?)\s+by\s+(.+)$", tl, re.I)
+    m = re.search(r"\bplay\s+(?:some\s+|a\s+)?(?:songs?|tracks?|albums?)\s+by\s+(.+)$", tl, re.I)
     if m:
         c = _clean(m.group(1))
         if c:
@@ -323,6 +348,15 @@ def _music_spotify_target_from_text(raw_text: str) -> str | None:
     return None
 
 
+def _extract_video_query(text: str) -> str | None:
+    t = _lower(text)
+    # "play brooklyn 99 clips" -> "brooklyn 99 clips"
+    m = re.search(r"\b(play|watch|show|search\s+for)\s+(?:some\s+)?(.+?)(?:\s+on\s+youtube|\s+clips)?$", t)
+    if m:
+        return m.group(2).strip()
+    return None
+
+
 def classify_user_text(text: str) -> UserTextClassification:
     t = _lower(text)
     if not t:
@@ -340,7 +374,7 @@ def classify_user_text(text: str) -> UserTextClassification:
     if _stop_music_signal(t):
         return UserTextClassification(force_intent="STOP_MUSIC", force_target=None)
 
-    if _music_play_signal(t) and not _project_signal(t):
+    if _music_play_signal(t) and not _project_signal(t) and not _video_play_signal(t):
         q = _music_spotify_target_from_text(text)
         if q:
             return UserTextClassification(force_intent="PLAY_MUSIC", force_target=q)
@@ -387,6 +421,11 @@ def classify_user_text(text: str) -> UserTextClassification:
     if any(m in t for m in _NEWS_WORLD_MARKERS):
         return UserTextClassification(force_intent="FETCH_WORLD_NEWS", force_target=None)
 
+    if _video_play_signal(t):
+        q = _extract_video_query(text)
+        if q:
+            return UserTextClassification(force_intent="WATCH_VIDEO", force_target=q)
+
     return UserTextClassification()
 
 
@@ -409,6 +448,8 @@ def reconcile_llm_intent(user_text: str, intent: str, target: str | None) -> tup
             return "PLAY_MUSIC", q
         return "PLAY_MUSIC", _music_app_target(t)
     if intent == "PLAY_MUSIC":
+        if _video_play_signal(t):
+            return "WATCH_VIDEO", _extract_video_query(user_text)
         q = _music_spotify_target_from_text(user_text)
         if q:
             return "PLAY_MUSIC", q
@@ -419,8 +460,10 @@ def reconcile_llm_intent(user_text: str, intent: str, target: str | None) -> tup
     if intent == "HANDLE_ASSIGNMENTS" and _vague_do_something(t) and not _has_assignment_signal(t):
         return "GENERAL_CHAT", None
     
-    # News reconciliation
+    # Video and News reconciliation
     if intent in ("UNKNOWN", "GENERAL_CHAT", "OPEN_WEBSITE", "SEARCH_WEB"):
+        if _video_play_signal(t):
+            return "WATCH_VIDEO", _extract_video_query(user_text)
         if any(m in t for m in _NEWS_TECH_MARKERS):
             return "FETCH_TECH_NEWS", None
         if any(m in t for m in _NEWS_WORLD_MARKERS):

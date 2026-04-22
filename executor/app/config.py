@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +18,8 @@ class Settings(BaseSettings):
 
     assignment_location: str = ""
     project_location: str = ""
+
+    youtube_api_key: str = Field(default="", validation_alias="Youtube_Data_API_V3")
 
     model_config = SettingsConfigDict(
         env_prefix="EXECUTOR_",

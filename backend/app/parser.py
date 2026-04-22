@@ -38,6 +38,7 @@ CRITICAL RULES:
 9. For **Tech News**, use `FETCH_TECH_NEWS`.
 10. For **World News**, use `FETCH_WORLD_NEWS`.
 11. For **DO_ASSIGNMENT**: use when the user wants to START or WORK ON a specific assignment from their list. Set "target" to the assignment number or name. If the user mentions "gemini" or "antigravity", append "|gemini" or "|antigravity" to the target (e.g. "17|gemini"). Default to "gemini" if unspecified.
+12. For **WATCH_VIDEO**: search and play YouTube videos. Set "target" to the query (e.g. "brooklyn 99 clips").
 
 FORMAT FOR ACTIONS:
 <Conversational message>
@@ -61,6 +62,13 @@ Input: "show me some world news"
 Output: "Looking up the global headlines right now.
 {{
   "intent": "FETCH_WORLD_NEWS"
+}}"
+
+Input: "watch the latest trailer"
+Output: "Sure, pulling that video up for you.
+{{
+  "intent": "WATCH_VIDEO",
+  "target": "latest trailer"
 }}"
 
 Input: "do my assignment"
@@ -121,6 +129,13 @@ Output: "Playing that track.
 {{
   "intent": "PLAY_MUSIC",
   "target": "track:Duur"
+}}"
+
+Input: "play brooklyn 99 clips"
+Output: "Starting Brooklyn Nine-Nine clips on YouTube for you.
+{{
+  "intent": "WATCH_VIDEO",
+  "target": "brooklyn 99 clips"
 }}"
 """
 

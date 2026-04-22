@@ -54,16 +54,26 @@ def _get_devices(client: httpx.Client) -> list[dict]:
 def _get_active_device(client: httpx.Client) -> str | None:
     """Return the device_id of the currently active (or any available) Spotify device."""
     devices = _get_devices(client)
-    if devices:
-        print(f"[JARVIS Spotify] Found {len(devices)} device(s): {[d.get('name') for d in devices]}")
+    if not devices:
+        return None
+        
+    print(f"[JARVIS Spotify] Found {len(devices)} device(s): {[d.get('name') for d in devices]}")
+    
     # Prefer the currently active one
     for d in devices:
         if d.get("is_active"):
             return d["id"]
-    # Otherwise use any available device and transfer playback to it
-    if devices:
-        return devices[0]["id"]
-    return None
+            
+    # Otherwise use any available device
+    return devices[0]["id"]
+
+
+def _activate_device(client: httpx.Client, device_id: str) -> bool:
+    """Transfer playback to the given device to make it active."""
+    # PUT /me/player -> {"device_ids": [device_id], "play": false}
+    print(f"[JARVIS Spotify] Activating device {device_id}...")
+    resp = client.put(f"{_API}/me/player", headers=_headers(), json={"device_ids": [device_id], "play": False})
+    return resp.status_code in (200, 204)
 
 
 def _open_spotify_app() -> None:
@@ -139,20 +149,37 @@ def _search(client: httpx.Client, query: str, kind: str) -> str | None:
     return None
 
 
-def _play(client: httpx.Client, device_id: str, context_uri: str | None, track_uri: str | None) -> bool:
+def _get_liked_track_uris(client: httpx.Client, limit: int = 50) -> list[str]:
+    """Fetch the user's Liked Songs and return a list of track URIs."""
+    resp = client.get(
+        f"{_API}/me/tracks",
+        headers=_headers(),
+        params={"limit": min(limit, 50), "offset": 0},
+    )
+    if resp.status_code != 200:
+        print(f"[JARVIS Spotify] /me/tracks returned HTTP {resp.status_code}: {resp.text[:200]}")
+        return []
+    items = resp.json().get("items", [])
+    uris = [item["track"]["uri"] for item in items if item.get("track", {}).get("uri")]
+    print(f"[JARVIS Spotify] Fetched {len(uris)} liked tracks.")
+    return uris
+
+
+def _play(client: httpx.Client, device_id: str, *, context_uri: str | None = None,
+          track_uris: list[str] | None = None) -> httpx.Response:
     """
     Start playback on the given device.
-    - context_uri: for playlists, albums, artists, collections
-    - track_uri:   for a single track (uses 'uris' instead of 'context_uri')
+    - context_uri: for playlists, albums, artists (NOT liked-songs collection)
+    - track_uris:  list of track URIs (for liked songs or single tracks)
     """
     body: dict = {"device_id": device_id}
     if context_uri:
         body["context_uri"] = context_uri
-    elif track_uri:
-        body["uris"] = [track_uri]
+    elif track_uris:
+        body["uris"] = track_uris
 
     resp = client.put(f"{_API}/me/player/play", headers=_headers(), json=body)
-    return resp.status_code in (200, 204)
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -209,11 +236,24 @@ def handle_play_music(task: Task, ctx: HandlerContext) -> TaskResult:
                     ),
                 )
 
+            # Ensure the device is active (Transfer Playback)
+            _activate_device(client, device_id)
+            time.sleep(1.0) # Give it a second to wake up
+
             # 2. Resolve what to play
             if kind == "liked":
-                # Play Liked Songs collection
-                success = _play(client, device_id, context_uri=SPOTIFY_LIKED_URI, track_uri=None)
-                play_uri = SPOTIFY_LIKED_URI
+                # Fetch actual liked-song track URIs (the collection pseudo-URI
+                # is not accepted by the Web API's /me/player/play endpoint).
+                liked_uris = _get_liked_track_uris(client, limit=50)
+                if not liked_uris:
+                    return TaskResult(
+                        action=task.action,
+                        success=False,
+                        error_code="NO_LIKED_SONGS",
+                        message="Your Liked Songs library appears empty or couldn't be fetched.",
+                    )
+                resp = _play(client, device_id, track_uris=liked_uris)
+                play_uri = SPOTIFY_LIKED_URI  # cosmetic — for the response label
             else:
                 # Search for the track/artist/album
                 uri = _search(client, query, kind)
@@ -225,15 +265,15 @@ def handle_play_music(task: Task, ctx: HandlerContext) -> TaskResult:
                         message=f"Could not find '{query}' on Spotify.",
                     )
                 play_uri = uri
-                # Tracks use 'uris', everything else uses 'context_uri'
+                # Tracks use 'track_uris', everything else uses 'context_uri'
                 is_track = uri.startswith("spotify:track:")
-                success = _play(
+                resp = _play(
                     client, device_id,
                     context_uri=None if is_track else uri,
-                    track_uri=uri if is_track else None,
+                    track_uris=[uri] if is_track else None,
                 )
 
-            if success:
+            if resp.status_code in (200, 204):
                 return TaskResult(
                     action=task.action,
                     success=True,
@@ -241,11 +281,18 @@ def handle_play_music(task: Task, ctx: HandlerContext) -> TaskResult:
                     artifacts={"spotify_uri": play_uri, "device_id": device_id, "label": label},
                 )
             else:
+                error_msg = f"Spotify API rejected the play request for '{label}'."
+                error_body = resp.json().get("error", {})
+                if resp.status_code == 403 and "Premium" in error_body.get("message", ""):
+                    error_msg = "Spotify Premium is required for playback control via the API."
+                elif resp.status_code == 404:
+                    error_msg = "Spotify device not found or no longer active. Please reopen the app."
+                
                 return TaskResult(
                     action=task.action,
                     success=False,
                     error_code="PLAYBACK_FAILED",
-                    message=f"Spotify API rejected the play request for '{label}'.",
+                    message=f"{error_msg} (HTTP {resp.status_code})",
                 )
 
     except Exception as e:
