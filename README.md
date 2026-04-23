@@ -57,3 +57,9 @@ Work is staged in seven phases. Each phase has a dedicated plan under [`docs/`](
 Build a system that **understands**, **decides**, **executes**, and **assists continuously** — an execution system, not a chatbot.
 
 For scope, milestones, and deliverables per stage, see the phase documents in `docs/`.
+
+## Model Attributions
+
+- Voice model inspiration and local clone: [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
+- Local path used in this project: `backend/models/Kokoro-82M`
+- Runtime usage: desktop assistant voice is served via backend `/api/tts` using Kokoro-82M (with fallback voice if unavailable).

@@ -2,6 +2,7 @@ import json
 import re
 import sys
 import os
+from pathlib import Path
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -19,9 +20,49 @@ SUPPORTED_INTENTS_TEXT = "\n".join(
     f"   - {intent}" for intent in sorted(ALLOWED_INTENTS) if intent != "UNKNOWN"
 )
 
+_DEFAULT_PERSONALITY_PROMPT = """
+PERSONALITY:
+- Speak as JARVIS: calm, composed, capable, semi-formal.
+- Address the user as "Sir" by default.
+- Keep responses concise, clear, and structured.
+- Use subtle dry wit occasionally, never disrespectful.
+- Avoid slang/filler words.
+"""
+
+
+def _load_personality_prompt() -> str:
+    profile_path = Path(__file__).resolve().parents[2] / "jarvis.json"
+    try:
+        data = json.loads(profile_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return _DEFAULT_PERSONALITY_PROMPT.strip()
+
+    identity = data.get("identity", {}) if isinstance(data, dict) else {}
+    traits = data.get("personality_traits", {}) if isinstance(data, dict) else {}
+    speech = data.get("speech_style", {}) if isinstance(data, dict) else {}
+    objective = data.get("core_objective", {}) if isinstance(data, dict) else {}
+
+    lines = [
+        "PERSONALITY:",
+        f'- Name: {identity.get("name", "JARVIS")}.',
+        f'- Role: {identity.get("role", "Intelligent Artificial Assistant")}.',
+        f'- Address user as "{identity.get("addressing_style", {}).get("primary", "Sir")}" by default.',
+        f'- Tone: {traits.get("tone", "calm")}, formality: {traits.get("formality", "semi-formal")}, confidence: {traits.get("confidence", "high")}.',
+        f'- Speech style: {speech.get("sentence_structure", "clear and structured")}, verbosity: {speech.get("verbosity", "moderate")}.',
+        '- Keep responses clear and concise; avoid slang and filler words.',
+        '- Humor may be dry/subtle and respectful only when appropriate.',
+        f'- Core objective: {objective.get("primary", "Assist efficiently and accurately")}.',
+    ]
+    return "\n".join(lines)
+
+
+PERSONALITY_PROMPT = _load_personality_prompt()
+
+
 SYSTEM_PROMPT = f"""
 You are JARVIS, a professional and proactive AI assistant.
 Your goal is to understand user intent and provide a natural response followed by a structural command IF an action is required.
+{PERSONALITY_PROMPT}
 
 CRITICAL RULES:
 1. You MUST ONLY output intents from this list:
@@ -203,6 +244,17 @@ def _extract_intent_from_text(content: str) -> str | None:
     return None
 
 
+def _quick_conversational_response(user_text: str) -> str | None:
+    t = user_text.strip().lower()
+    if not t:
+        return None
+
+    # Fast conversational wake/greeting path: avoids unnecessary LLM latency.
+    if re.fullmatch(r"(wake\s*up|wake up jarvis|jarvis|hey jarvis|hello|hi|good (morning|afternoon|evening))", t):
+        return "At your service, Sir. How may I assist you today?"
+    return None
+
+
 def _fallback_intent_from_user_text(text: str) -> tuple[str | None, str | None]:
     """Last-resort when JSON is invalid; mirrors heuristics for assignment/project."""
     h = classify_user_text(text)
@@ -232,6 +284,10 @@ def _wrap(message: str, command: ActionCommand | None) -> AssistantResponse:
 
 
 async def parse_intent(text: str) -> AssistantResponse:
+    quick = _quick_conversational_response(text)
+    if quick:
+        return _wrap(quick, None)
+
     cls = classify_user_text(text)
 
     # Fast-path deterministic intents so common desktop commands still work

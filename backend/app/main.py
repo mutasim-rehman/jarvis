@@ -1,14 +1,18 @@
 import sys
 import os
+import base64
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from shared.schema import InteractResponse, ParseRequest, ParseResponse, RouteKind, SCHEMA_VERSION
 from .config import settings
 from .parser import parse_intent
 from .executor_client import executor_client
+from .stt import transcribe_wav_bytes
+from .tts import synthesize_kokoro_wav
 
 app = FastAPI(
     title="JARVIS Backend API",
@@ -63,3 +67,52 @@ async def interact(
         execution_result=execution_result,
         original_text=request.text,
     )
+
+
+@app.post("/api/transcribe")
+async def transcribe_audio(
+    request: Request,
+    _: None = Depends(verify_dev_api_key),
+):
+    audio_bytes = await request.body()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio payload.")
+
+    try:
+        text = transcribe_wav_bytes(audio_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return {"text": text}
+
+
+class TtsRequest(BaseModel):
+    text: str = Field(min_length=1)
+    voice: str | None = None
+    speed: float | None = None
+
+
+@app.post("/api/tts")
+async def synthesize_tts(
+    request: TtsRequest,
+    _: None = Depends(verify_dev_api_key),
+):
+    try:
+        wav_bytes, sample_rate = synthesize_kokoro_wav(
+            text=request.text,
+            voice=request.voice,
+            speed=request.speed,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return {
+        "audio_base64": base64.b64encode(wav_bytes).decode("ascii"),
+        "sample_rate": sample_rate,
+        "format": "wav",
+        "voice": request.voice or settings.tts_kokoro_voice,
+    }

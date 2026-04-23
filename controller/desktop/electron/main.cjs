@@ -1,4 +1,5 @@
 const path = require("node:path");
+const fs = require("node:fs/promises");
 const { spawn } = require("node:child_process");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
@@ -177,18 +178,65 @@ async function checkHealth(serviceId) {
 
 async function callInteract(text, baseUrl) {
   const url = `${baseUrl.replace(/\/+$/, "")}/api/interact`;
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(60000),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new Error("Request timed out after 60s. Backend may still be processing.");
+    }
+    throw error;
+  }
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Backend returned ${response.status}: ${responseText || response.statusText}`);
+  }
+
+  return response.json();
+}
+
+async function callTranscribe(wavBytesBase64, baseUrl) {
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/transcribe`;
+  const wavBuffer = Buffer.from(wavBytesBase64, "base64");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "audio/wav",
+    },
+    body: wavBuffer,
+    signal: AbortSignal.timeout(45000),
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Transcription failed ${response.status}: ${responseText || response.statusText}`);
+  }
+
+  return response.json();
+}
+
+async function callTts(text, baseUrl) {
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/tts`;
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ text }),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(60000),
   });
 
   if (!response.ok) {
     const responseText = await response.text();
-    throw new Error(`Backend returned ${response.status}: ${responseText || response.statusText}`);
+    throw new Error(`TTS failed ${response.status}: ${responseText || response.statusText}`);
   }
 
   return response.json();
@@ -264,4 +312,34 @@ ipcMain.handle("backend:interact", async (_event, text, baseUrl) => {
     return { ok: false, error: message };
   }
 });
+ipcMain.handle("backend:transcribe", async (_event, wavBytesBase64, baseUrl) => {
+  try {
+    const data = await callTranscribe(wavBytesBase64, baseUrl);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown transcription error";
+    appendLog("backend", `[transcribe-error] ${message}`);
+    return { ok: false, error: message };
+  }
+});
+ipcMain.handle("backend:tts", async (_event, text, baseUrl) => {
+  try {
+    const data = await callTts(text, baseUrl);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown TTS error";
+    appendLog("backend", `[tts-error] ${message}`);
+    return { ok: false, error: message };
+  }
+});
 ipcMain.handle("system:repo-root", async () => repoRoot);
+ipcMain.handle("system:jarvis-profile", async () => {
+  const profilePath = path.join(repoRoot, "jarvis.json");
+  try {
+    const raw = await fs.readFile(profilePath, "utf-8");
+    return { ok: true, data: JSON.parse(raw) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to read jarvis profile";
+    return { ok: false, error: message };
+  }
+});
