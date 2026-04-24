@@ -343,3 +343,16 @@ ipcMain.handle("system:jarvis-profile", async () => {
     return { ok: false, error: message };
   }
 });
+ipcMain.handle("window:open-devtools", async (event) => {
+  try {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWindow || senderWindow.isDestroyed()) {
+      return { ok: false, error: "Window not available" };
+    }
+    senderWindow.webContents.openDevTools({ mode: "detach" });
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to open DevTools";
+    return { ok: false, error: message };
+  }
+});

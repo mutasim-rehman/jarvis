@@ -6,13 +6,14 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "npm run dev:desktop",
-    "dev:ui": "vite",
-    "dev:electron": "wait-on tcp:5173 && electron .",
+    "dev:ui": "npx vite",
+    "dev:electron": "wait-on tcp:5173 && npx electron .",
     "dev:desktop": "concurrently -k \"npm run dev:ui\" \"npm run dev:electron\"",
-    "electron": "electron .",
-    "build": "tsc -b && vite build",
+    "electron": "npx electron .",
+    "build": "tsc -b && npx vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "npx vite preview",
+    "start": "npm run dev"
   },
   "dependencies": {
     "react": "^19.2.5",

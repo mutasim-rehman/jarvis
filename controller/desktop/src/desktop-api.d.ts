@@ -65,6 +65,7 @@ interface DesktopApi {
   getRepoRoot: () => Promise<string>;
   getJarvisProfile: () => Promise<{ ok: true; data: JarvisProfile } | { ok: false; error: string }>;
   onServiceLog: (callback: (payload: ServiceLogEvent) => void) => () => void;
+  openDevTools: () => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 declare global {

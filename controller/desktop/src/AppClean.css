@@ -1,0 +1,88 @@
+/* Full-screen HUD iframe background */
+.app {
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+}
+
+.hud-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+}
+
+/* Premium glass‑morphism overlay for chat input */
+.chat-input-bar {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  backdrop-filter: blur(12px);
+  background: rgba(10,10,10,0.45);
+  border: 1px solid rgba(255,140,0,0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 2;
+}
+.chat-input-bar input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #ffcc80;
+  font-family: 'Orbitron', monospace;
+  font-size: 0.9rem;
+}
+.chat-input-bar button {
+  background: #ff6600;
+  border: none;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.chat-input-bar button:hover { transform: scale(1.05); }
+
+/* Control panel overlay */
+.control-panel {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  color: #ff6600;
+  z-index: 2;
+}
+.control-panel button {
+  background: rgba(0,0,0,0.6);
+  border: 1px solid #ff6600;
+  color: #ffddaa;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.control-panel button:hover {
+  background: rgba(255,102,0,0.8);
+}
+
+/* Badge styles (reuse existing if any) */
+.badge.ok {
+  background: rgba(0, 100, 0, 0.6);
+  color: #aaffaa;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.badge.error {
+  background: rgba(100, 0, 0, 0.6);
+  color: #ffaaaa;
+  padding: 2px 6px;
+  border-radius: 3px;
+}

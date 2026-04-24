@@ -19,4 +19,5 @@ contextBridge.exposeInMainWorld("desktopApi", {
       ipcRenderer.removeListener("services:log", listener);
     };
   },
+  openDevTools: () => ipcRenderer.invoke("window:open-devtools"),
 });
