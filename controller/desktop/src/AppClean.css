@@ -1,8 +1,48 @@
-/* Full-screen HUD iframe background */
-.app {
-  position: relative;
+/* ─── GLOBAL ─────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body,
+html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
   overflow: hidden;
-  min-height: 100vh;
+}
+
+.app {
+  background: #000;
+  color: #f4f6ff;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+}
+
+/* ─── JARVIS FULL-SCREEN BACKGROUND ──────────────────────────── */
+/* The visual pane sits behind everything, filling the viewport */
+.visual-pane {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.visual-shell {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .hud-container {
@@ -14,75 +54,361 @@
   pointer-events: none;
 }
 
-/* Premium glass‑morphism overlay for chat input */
-.chat-input-bar {
-  position: absolute;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 80%;
-  backdrop-filter: blur(12px);
-  background: rgba(10,10,10,0.45);
-  border: 1px solid rgba(255,140,0,0.2);
-  border-radius: 8px;
-  padding: 8px 12px;
+/* ─── TOP BAR ─────────────────────────────────────────────────── */
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
   display: flex;
+  align-items: center;
   gap: 8px;
-  z-index: 2;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
+  /* backdrop-filter: blur(4px); */
+  /* -webkit-backdrop-filter: blur(4px); */
+  pointer-events: auto;
 }
-.chat-input-bar input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: #ffcc80;
-  font-family: 'Orbitron', monospace;
-  font-size: 0.9rem;
-}
-.chat-input-bar button {
-  background: #ff6600;
-  border: none;
-  color: #fff;
-  padding: 4px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-.chat-input-bar button:hover { transform: scale(1.05); }
 
-/* Control panel overlay */
-.control-panel {
+/* ─── LAYOUT ──────────────────────────────────────────────────── */
+/* The layout is just a positioning context; visual-pane lives outside it */
+.layout {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ─── CONVERSATION PANEL — floating glass overlay ─────────────── */
+.conversation-pane {
+  position: fixed;
+  top: 56px;           /* below top-bar */
+  right: 20px;
+  bottom: 20px;
+  width: min(400px, calc(100vw - 40px));
+  z-index: 20;
+  pointer-events: auto;
+
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+
+  /* Glass card */
+  background: rgba(4, 6, 14, 0.55);
+  border: 1px solid rgba(255, 136, 0, 0.22);
+  border-radius: 16px;
+  padding: 16px;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 170, 0, 0.06) inset,
+    0 24px 64px rgba(0, 0, 0, 0.7);
+}
+
+/* Subtle amber glow along the left edge */
+.conversation-pane::before {
+  content: '';
   position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 12px;
-  color: #ff6600;
-  z-index: 2;
-}
-.control-panel button {
-  background: rgba(0,0,0,0.6);
-  border: 1px solid #ff6600;
-  color: #ffddaa;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.control-panel button:hover {
-  background: rgba(255,102,0,0.8);
+  top: 20%;
+  bottom: 20%;
+  left: -1px;
+  width: 2px;
+  background: linear-gradient(180deg, transparent, rgba(255, 136, 0, 0.5), transparent);
+  border-radius: 2px;
+  pointer-events: none;
 }
 
-/* Badge styles (reuse existing if any) */
-.badge.ok {
-  background: rgba(0, 100, 0, 0.6);
-  color: #aaffaa;
-  padding: 2px 6px;
+.conversation-pane h2 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: rgba(255, 170, 60, 0.7);
+  font-weight: 400;
+}
+
+/* ─── MESSAGES ────────────────────────────────────────────────── */
+.messages {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  /* Subtle scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 136, 0, 0.25) transparent;
+}
+
+.messages::-webkit-scrollbar {
+  width: 3px;
+}
+
+.messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 136, 0, 0.3);
   border-radius: 3px;
 }
+
+.message {
+  border-radius: 10px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  animation: msgIn 0.18s ease-out;
+}
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.message strong {
+  display: block;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 2px;
+  margin-bottom: 5px;
+  opacity: 0.6;
+}
+
+.message p {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.message.user {
+  background: rgba(30, 55, 110, 0.5);
+  border-color: rgba(60, 100, 180, 0.35);
+}
+
+.message.user strong {
+  color: #7aabff;
+}
+
+.message.assistant {
+  background: rgba(20, 60, 45, 0.5);
+  border-color: rgba(50, 120, 90, 0.35);
+}
+
+.message.assistant strong {
+  color: #5ddfb0;
+}
+
+.message.system {
+  background: rgba(80, 35, 20, 0.45);
+  border-color: rgba(140, 70, 40, 0.35);
+}
+
+.message.system strong {
+  color: #ffaa66;
+}
+
+.empty {
+  margin: auto;
+  text-align: center;
+  color: rgba(255, 170, 60, 0.35);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+/* ─── CHAT CONTROLS ───────────────────────────────────────────── */
+.chat-controls {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 6px;
+}
+
+/* ─── BUTTONS & INPUTS ────────────────────────────────────────── */
+button,
+input {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 136, 0, 0.28);
+  background: rgba(8, 14, 28, 0.7);
+  color: #f5f8ff;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+button {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover {
+  background: rgba(255, 136, 0, 0.12);
+  border-color: rgba(255, 136, 0, 0.5);
+}
+
+button.active {
+  background: rgba(255, 111, 15, 0.85);
+  border-color: #ff9140;
+  color: #fff;
+}
+
+input::placeholder {
+  color: rgba(255, 170, 60, 0.35);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+input:focus {
+  outline: none;
+  border-color: rgba(255, 136, 0, 0.6);
+  background: rgba(12, 20, 38, 0.85);
+}
+
+/* ─── STATUS BADGES ───────────────────────────────────────────── */
+.badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.badge.ok {
+  background: rgba(26, 123, 66, 0.4);
+  border: 1px solid rgba(40, 180, 90, 0.3);
+  color: #c9ffe1;
+}
+
 .badge.error {
-  background: rgba(100, 0, 0, 0.6);
-  color: #ffaaaa;
-  padding: 2px 6px;
-  border-radius: 3px;
+  background: rgba(143, 35, 58, 0.4);
+  border: 1px solid rgba(200, 60, 80, 0.3);
+  color: #ffd9e2;
+}
+
+/* ─── TERMINALS PANEL ─────────────────────────────────────────── */
+.terminals-panel {
+  position: fixed;
+  top: 56px;
+  left: 20px;
+  width: min(360px, calc(100vw - 440px));
+  z-index: 20;
+  border: 1px solid rgba(255, 136, 0, 0.2);
+  border-radius: 14px;
+  background: rgba(4, 8, 18, 0.75);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.terminals-panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminals-panel h3 {
+  margin: 0;
+  color: rgba(255, 200, 100, 0.8);
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.terminal-items {
+  display: grid;
+  gap: 6px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.terminal-item {
+  border: 1px solid rgba(255, 136, 0, 0.18);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 5, 15, 0.6);
+  display: grid;
+  gap: 3px;
+}
+
+.terminal-item strong {
+  font-size: 11px;
+  color: rgba(255, 170, 60, 0.8);
+}
+
+.terminal-item span {
+  font-size: 11px;
+  color: rgba(160, 180, 215, 0.7);
+}
+
+.terminal-item code {
+  font-size: 10px;
+  color: rgba(255, 210, 140, 0.7);
+}
+
+.terminal-empty {
+  margin: 0;
+  color: rgba(150, 165, 200, 0.6);
+  font-size: 11px;
+}
+
+/* ─── SPEAK MODE ──────────────────────────────────────────────── */
+.app.speak-mode .conversation-pane.hidden {
+  display: none;
+}
+
+.speak-floating {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  background: rgba(255, 111, 15, 0.9);
+  border-color: #ff9140;
+  color: #fff;
+  backdrop-filter: blur(8px);
+}
+
+/* ─── RESPONSIVE — narrow screens stack vertically ───────────── */
+@media (max-width: 860px) {
+  .conversation-pane {
+    top: auto;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 45vh;
+    border-radius: 16px 16px 0 0;
+    border-bottom: none;
+  }
+
+  .top-bar {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .terminals-panel {
+    top: 52px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-controls {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .chat-controls input {
+    grid-column: 1 / -1;
+  }
 }

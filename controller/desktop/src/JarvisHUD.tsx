@@ -1,11 +1,11 @@
 import React from "react";
-import jarvisVisualBody from "../../jarvis.html?raw";
+import { jarvisCoreVisualHtml } from "./jarvisCoreVisualHtml";
 
 export const JarvisHUD: React.FC = () => (
   <iframe
     className="hud-container"
-    srcDoc={jarvisVisualBody}
-    title="Jarvis HUD background"
+    srcDoc={jarvisCoreVisualHtml}
+    title="Jarvis HUD visual"
     aria-hidden="true"
     tabIndex={-1}
   />

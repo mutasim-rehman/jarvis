@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("desktopApi", {
   synthesizeSpeech: (text, baseUrl) => ipcRenderer.invoke("backend:tts", text, baseUrl),
   getRepoRoot: () => ipcRenderer.invoke("system:repo-root"),
   getJarvisProfile: () => ipcRenderer.invoke("system:jarvis-profile"),
+  listTerminals: () => ipcRenderer.invoke("system:list-terminals"),
   onServiceLog: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("services:log", listener);

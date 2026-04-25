@@ -40,6 +40,14 @@ export interface JarvisProfile {
   };
 }
 
+export interface TerminalSnapshot {
+  id: string;
+  pid: number | null;
+  cwd: string;
+  lastCommand: string;
+  lastExitCode: string;
+}
+
 interface DesktopApi {
   listServices: () => Promise<ServiceStatus[]>;
   startService: (serviceId: ServiceId) => Promise<ServiceStatus>;
@@ -64,6 +72,9 @@ interface DesktopApi {
   >;
   getRepoRoot: () => Promise<string>;
   getJarvisProfile: () => Promise<{ ok: true; data: JarvisProfile } | { ok: false; error: string }>;
+  listTerminals: () => Promise<
+    { ok: true; data: TerminalSnapshot[] } | { ok: false; error: string; data: TerminalSnapshot[] }
+  >;
   onServiceLog: (callback: (payload: ServiceLogEvent) => void) => () => void;
   openDevTools: () => Promise<{ ok: true } | { ok: false; error: string }>;
 }

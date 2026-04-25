@@ -1,9 +1,12 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const { spawn } = require("node:child_process");
+const os = require("node:os");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
+const projectName = path.basename(repoRoot);
+const cursorTerminalsDir = path.join(os.homedir(), ".cursor", "projects", projectName, "terminals");
 const maxLogLines = 300;
 
 /** @type {Record<string, {id: string, name: string, command: string, args: string[], env: Record<string, string>, healthUrl?: string}>} */
@@ -242,6 +245,55 @@ async function callTts(text, baseUrl) {
   return response.json();
 }
 
+async function listCursorTerminals() {
+  try {
+    const entries = await fs.readdir(cursorTerminalsDir, { withFileTypes: true });
+    const terminalFiles = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".txt"))
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    const terminals = await Promise.all(
+      terminalFiles.map(async (filename) => {
+        const terminalId = filename.replace(/\.txt$/i, "");
+        const content = await fs.readFile(path.join(cursorTerminalsDir, filename), "utf-8");
+        const lines = content.split(/\r?\n/);
+        const meta = {};
+        let inMeta = false;
+        for (const line of lines) {
+          if (line.trim() === "---") {
+            inMeta = !inMeta;
+            continue;
+          }
+          if (!inMeta) {
+            if (meta.cwd || meta.last_command || meta.last_exit_code !== undefined) {
+              break;
+            }
+            continue;
+          }
+          const match = line.match(/^([^:]+):\s*(.*)$/);
+          if (match) {
+            meta[match[1].trim()] = match[2].trim();
+          }
+        }
+
+        return {
+          id: terminalId,
+          pid: Number(meta.pid) || null,
+          cwd: meta.cwd || "",
+          lastCommand: meta.last_command || "",
+          lastExitCode: meta.last_exit_code ?? "",
+        };
+      })
+    );
+
+    return { ok: true, data: terminals };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to read terminals";
+    return { ok: false, error: message, data: [] };
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1300,
@@ -343,6 +395,7 @@ ipcMain.handle("system:jarvis-profile", async () => {
     return { ok: false, error: message };
   }
 });
+ipcMain.handle("system:list-terminals", async () => listCursorTerminals());
 ipcMain.handle("window:open-devtools", async (event) => {
   try {
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
