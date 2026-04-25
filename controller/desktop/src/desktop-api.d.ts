@@ -44,6 +44,7 @@ export interface TerminalSnapshot {
   id: string;
   pid: number | null;
   cwd: string;
+  activeCommand: string;
   lastCommand: string;
   lastExitCode: string;
 }

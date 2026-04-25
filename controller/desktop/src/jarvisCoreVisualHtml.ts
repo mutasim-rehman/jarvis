@@ -59,7 +59,11 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
 
   // GLOBAL PARAMETERS
   const SF = 0.6492; // Scale factor
-  const PX = -3.4;      // Horizontal position: 0 (Center), -5 (Left), 5 (Right)
+  const PX = -3.4; // Default horizontal position
+  const PX_SPEAK_HIDDEN = 0.0; // Center position when speak mode is active and conversation is hidden
+  const PX_SMOOTHING = 0.08;
+  let currentPx = PX;
+  let targetPx = PX;
 
   let _s = 42;
   function srnd() { _s ^= _s << 13; _s ^= _s >> 7; _s ^= _s << 17; return (_s >>> 0) / 4294967296; }
@@ -95,15 +99,29 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
       camera.updateProjectionMatrix();
       // elements[8] is the horizontal projection center. 
       // A value of 1.0 shifts the scene center by half the screen width.
-      camera.projectionMatrix.elements[8] = -PX / 10; 
+      camera.projectionMatrix.elements[8] = -currentPx / 10; 
       
       // Sync CSS HUD Pulse Rings
       const pulseContainer = document.getElementById("pulse-container");
       if (pulseContainer) {
           // Sync the CSS rings to match the 3D projection shift
-          pulseContainer.style.transform = \`translateX(\${PX * 5}vw)\`;
+          pulseContainer.style.transform = \`translateX(\${currentPx * 5}vw)\`;
       }
   };
+
+  const updateTargetPxFromMode = (payload = {}) => {
+    const speakModeOn = Boolean(payload.speakModeOn);
+    const conversationHidden = Boolean(payload.conversationHidden);
+    targetPx = speakModeOn && conversationHidden ? PX_SPEAK_HIDDEN : PX;
+  };
+
+  window.addEventListener("message", (event) => {
+    const data = event?.data;
+    if (!data || typeof data !== "object" || data.type !== "jarvis-visual-mode") {
+      return;
+    }
+    updateTargetPxFromMode(data.payload);
+  });
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.05;
@@ -334,6 +352,9 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
     const t = clock.getElapsedTime();
     const beat = 0.5 + 0.5 * Math.sin(t * 4.2);
     const beat2 = 0.5 + 0.5 * Math.sin(t * 2.1 + 1.5);
+
+    currentPx += (targetPx - currentPx) * PX_SMOOTHING;
+    applyLensShift();
 
     shells[0].scale.setScalar(1 + beat * 0.3); shells[1].scale.setScalar(1 + beat * 0.18);
     shells[2].scale.setScalar(1 + beat2 * 0.1); shells[3].scale.setScalar(1 + beat2 * 0.06);

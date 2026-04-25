@@ -26,6 +26,17 @@ type BrowserSpeechRecognition = {
 };
 
 type BrowserSpeechRecognitionCtor = new () => BrowserSpeechRecognition;
+type LocalMicState = {
+  stream: MediaStream;
+  context: AudioContext;
+  source: MediaStreamAudioSourceNode;
+  processor: ScriptProcessorNode;
+  sink: GainNode;
+  chunks: Float32Array[];
+  sampleCount: number;
+  rmsSum: number;
+  rmsFrames: number;
+};
 
 function defaultHealthMap() {
   return {
@@ -46,7 +57,106 @@ function extractAssistantText(data: unknown): string {
       return value;
     }
   }
+
+  const nestedAssistant = record.assistant_response;
+  if (nestedAssistant && typeof nestedAssistant === "object") {
+    const nestedMessage = (nestedAssistant as Record<string, unknown>).message;
+    if (typeof nestedMessage === "string" && nestedMessage.trim()) {
+      return nestedMessage;
+    }
+  }
   return JSON.stringify(data, null, 2);
+}
+
+function mergeFloat32Chunks(chunks: Float32Array[], totalLength: number): Float32Array {
+  const merged = new Float32Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
+function downsampleTo16BitPcm(
+  input: Float32Array,
+  inputSampleRate: number,
+  outputSampleRate = 16000
+): Int16Array {
+  if (input.length === 0) {
+    return new Int16Array(0);
+  }
+
+  if (inputSampleRate === outputSampleRate) {
+    const pcm = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i += 1) {
+      const sample = Math.max(-1, Math.min(1, input[i]));
+      pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+    }
+    return pcm;
+  }
+
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.max(1, Math.floor(input.length / ratio));
+  const pcm = new Int16Array(outputLength);
+  let outputIndex = 0;
+  let inputIndex = 0;
+
+  while (outputIndex < outputLength) {
+    const nextInputIndex = Math.min(input.length, Math.round((outputIndex + 1) * ratio));
+    let sum = 0;
+    let count = 0;
+    for (let i = inputIndex; i < nextInputIndex; i += 1) {
+      sum += input[i];
+      count += 1;
+    }
+    const averaged = count > 0 ? sum / count : input[Math.min(inputIndex, input.length - 1)];
+    const sample = Math.max(-1, Math.min(1, averaged));
+    pcm[outputIndex] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+    outputIndex += 1;
+    inputIndex = nextInputIndex;
+  }
+
+  return pcm;
+}
+
+function wavBase64FromPcm16(pcm: Int16Array, sampleRate: number): string {
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+  const writeText = (offset: number, value: string) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  };
+
+  writeText(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeText(8, "WAVE");
+  writeText(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeText(36, "data");
+  view.setUint32(40, pcm.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < pcm.length; i += 1) {
+    view.setInt16(offset, pcm[i], true);
+    offset += 2;
+  }
+
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return window.btoa(binary);
 }
 
 export default function App() {
@@ -61,7 +171,12 @@ export default function App() {
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminals, setTerminals] = useState<TerminalSnapshot[]>([]);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const speakingModeRef = useRef(false);
+  const micOnRef = useRef(false);
+  const micNetworkIssueNotifiedRef = useRef(false);
+  const useLocalMicRef = useRef(false);
+  const localMicStateRef = useRef<LocalMicState | null>(null);
+  const localMicInitializingRef = useRef(false);
+  const localTranscribeBusyRef = useRef(false);
 
   const servicesById = useMemo(
     () => services.reduce<Record<string, ServiceStatus>>((acc, service) => {
@@ -72,7 +187,10 @@ export default function App() {
   );
   
   const areAllCoreRunning = coreServiceIds.every((id) => servicesById[id]?.running);
-  const runningTerminals = terminals.filter((terminal) => terminal.lastExitCode === "" || terminal.lastExitCode === "null");
+  const runningTerminals = terminals.filter((terminal) => {
+    if (terminal.activeCommand.trim()) return true;
+    return terminal.lastExitCode === "" || terminal.lastExitCode === "null";
+  });
 
   const refreshServices = useCallback(async () => {
     const next = await window.desktopApi.listServices();
@@ -176,7 +294,135 @@ export default function App() {
     }
   }, []);
 
+  const stopLocalMicCapture = useCallback(() => {
+    const state = localMicStateRef.current;
+    if (!state) return;
+    state.processor.onaudioprocess = null;
+    state.source.disconnect();
+    state.processor.disconnect();
+    state.sink.disconnect();
+    state.stream.getTracks().forEach((track) => track.stop());
+    void state.context.close();
+    localMicStateRef.current = null;
+    localMicInitializingRef.current = false;
+  }, []);
+
+  const transcribeLocalSegment = useCallback(async (audio: Float32Array, inputSampleRate: number) => {
+    if (localTranscribeBusyRef.current) {
+      return;
+    }
+    const pcm = downsampleTo16BitPcm(audio, inputSampleRate, 16000);
+    if (pcm.length < 8000) {
+      return;
+    }
+
+    localTranscribeBusyRef.current = true;
+    try {
+      const wavBase64 = wavBase64FromPcm16(pcm, 16000);
+      const response = await window.desktopApi.transcribeAudio(wavBase64, backendBaseUrl);
+      if ("error" in response) {
+        addMessage("system", `Transcription error: ${response.error}`);
+        return;
+      }
+      const transcript = (response.data.text ?? "").trim();
+      if (transcript) {
+        void sendText(transcript);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown transcription failure";
+      addMessage("system", `Transcription error: ${message}`);
+    } finally {
+      localTranscribeBusyRef.current = false;
+    }
+  }, [addMessage, sendText]);
+
+  const startLocalMicCapture = useCallback(async () => {
+    if (localMicStateRef.current || localMicInitializingRef.current) return;
+    localMicInitializingRef.current = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const context = new AudioContext();
+      await context.resume();
+
+      const source = context.createMediaStreamSource(stream);
+      const processor = context.createScriptProcessor(4096, 1, 1);
+      const sink = context.createGain();
+      sink.gain.value = 0;
+
+      const state: LocalMicState = {
+        stream,
+        context,
+        source,
+        processor,
+        sink,
+        chunks: [],
+        sampleCount: 0,
+        rmsSum: 0,
+        rmsFrames: 0,
+      };
+
+      processor.onaudioprocess = (event) => {
+        if (!micOnRef.current) return;
+        const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
+        state.chunks.push(chunk);
+        state.sampleCount += chunk.length;
+
+        let energy = 0;
+        for (let i = 0; i < chunk.length; i += 1) {
+          energy += chunk[i] * chunk[i];
+        }
+        const rms = Math.sqrt(energy / chunk.length);
+        state.rmsSum += rms;
+        state.rmsFrames += 1;
+
+        const segmentSeconds = state.sampleCount / state.context.sampleRate;
+        if (segmentSeconds < 3.0) return;
+
+        const avgRms = state.rmsFrames ? state.rmsSum / state.rmsFrames : 0;
+        const merged = mergeFloat32Chunks(state.chunks, state.sampleCount);
+        state.chunks = [];
+        state.sampleCount = 0;
+        state.rmsSum = 0;
+        state.rmsFrames = 0;
+
+        if (avgRms > 0.011) {
+          void transcribeLocalSegment(merged, state.context.sampleRate);
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(sink);
+      sink.connect(context.destination);
+      localMicStateRef.current = state;
+      localMicInitializingRef.current = false;
+      if (!micNetworkIssueNotifiedRef.current) {
+        addMessage("system", "Mic switched to local transcription mode.");
+        micNetworkIssueNotifiedRef.current = true;
+      }
+    } catch (error) {
+      localMicInitializingRef.current = false;
+      const message = error instanceof Error ? error.message : "Unable to access microphone";
+      addMessage("system", `Mic access error: ${message}`);
+      setMicOn(false);
+    }
+  }, [addMessage, transcribeLocalSegment]);
+
   const startMicRecognition = useCallback(() => {
+    if (recognitionRef.current) return;
+    if (useLocalMicRef.current) {
+      if (!localMicStateRef.current) {
+        void startLocalMicCapture();
+      }
+      return;
+    }
+
     const speechCtor = (
       window as typeof window & {
         SpeechRecognition?: BrowserSpeechRecognitionCtor;
@@ -191,8 +437,8 @@ export default function App() {
       ).webkitSpeechRecognition;
 
     if (!speechCtor) {
-      addMessage("system", "Speech recognition is not available in this runtime.");
-      setMicOn(false);
+      useLocalMicRef.current = true;
+      void startLocalMicCapture();
       return;
     }
 
@@ -211,22 +457,63 @@ export default function App() {
         }
       }
     };
-    recognition.onerror = () => {
-      addMessage("system", "Mic capture error. Try toggling mic again.");
+    recognition.onerror = (event) => {
+      const errorType = (event as Event & { error?: string }).error ?? "";
+      if (errorType === "aborted" || errorType === "no-speech") {
+        return;
+      }
+      if (errorType === "network") {
+        useLocalMicRef.current = true;
+        if (!micNetworkIssueNotifiedRef.current) {
+          addMessage("system", "Mic recognition network issue detected. Switching to local transcription...");
+          micNetworkIssueNotifiedRef.current = true;
+        }
+        try {
+          recognition.stop();
+        } catch {
+          // Ignore stop failures before forced restart.
+        }
+        return;
+      }
+      addMessage("system", `Mic capture error${errorType ? ` (${errorType})` : ""}.`);
     };
     recognition.onend = () => {
-      if (micOn && speakingModeRef.current) {
-        recognition.start();
+      if (useLocalMicRef.current) {
+        recognitionRef.current = null;
+        if (micOnRef.current) {
+          void startLocalMicCapture();
+        }
+        return;
+      }
+      if (micOnRef.current) {
+        window.setTimeout(() => {
+          if (!micOnRef.current || recognitionRef.current !== recognition) {
+            return;
+          }
+          try {
+            recognition.start();
+          } catch {
+            // Ignore transient restart failures; next state transition restarts recognition.
+          }
+        }, 180);
         return;
       }
       recognitionRef.current = null;
     };
     recognition.start();
     recognitionRef.current = recognition;
-  }, [addMessage, micOn, sendText]);
+  }, [addMessage, sendText, startLocalMicCapture]);
 
   useEffect(() => {
-    speakingModeRef.current = speakModeOn;
+    micOnRef.current = micOn;
+    if (!micOn) {
+      micNetworkIssueNotifiedRef.current = false;
+    }
+  }, [micOn]);
+
+  useEffect(() => {
+    // In speak mode, keep the mic active continuously. Turn it off when speak mode ends.
+    setMicOn(speakModeOn);
   }, [speakModeOn]);
 
   useEffect(() => {
@@ -235,14 +522,16 @@ export default function App() {
       return;
     }
     stopMicRecognition();
-  }, [micOn, startMicRecognition, stopMicRecognition]);
+    stopLocalMicCapture();
+  }, [micOn, startMicRecognition, stopLocalMicCapture, stopMicRecognition]);
 
   useEffect(() => () => {
     stopMicRecognition();
+    stopLocalMicCapture();
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
-  }, [stopMicRecognition]);
+  }, [stopLocalMicCapture, stopMicRecognition]);
 
   const loadTerminals = async () => {
     setTerminalsLoading(true);
@@ -315,7 +604,7 @@ export default function App() {
                 <article key={terminal.id} className="terminal-item">
                   <strong>#{terminal.id}</strong>
                   <span>{terminal.cwd || "(cwd unavailable)"}</span>
-                  <code>{terminal.lastCommand || "(no command recorded)"}</code>
+                  <code>{terminal.activeCommand || terminal.lastCommand || "(no command recorded)"}</code>
                 </article>
               ))
             )}
@@ -326,7 +615,7 @@ export default function App() {
       <section className={`layout ${speakModeOn ? "layout-speak" : ""}`}>
         <div className="visual-pane">
           <div className="visual-shell">
-            <JarvisHUD />
+            <JarvisHUD speakModeOn={speakModeOn} conversationHidden={speakModeOn} />
           </div>
         </div>
 

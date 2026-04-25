@@ -5,9 +5,70 @@ const os = require("node:os");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
+const cursorProjectsDir = path.join(os.homedir(), ".cursor", "projects");
 const projectName = path.basename(repoRoot);
-const cursorTerminalsDir = path.join(os.homedir(), ".cursor", "projects", projectName, "terminals");
 const maxLogLines = 300;
+
+function sanitizePathSegment(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function buildCursorProjectCandidates() {
+  const parsed = path.parse(repoRoot);
+  const driveSlug = sanitizePathSegment(parsed.root.replace(/[:\\/]/g, ""));
+  const baseSlug = sanitizePathSegment(projectName);
+  return uniqueValues([
+    projectName,
+    baseSlug,
+    `${driveSlug}-${projectName}`,
+    `${driveSlug}-${baseSlug}`,
+  ]);
+}
+
+async function resolveCursorTerminalsDir() {
+  const candidates = buildCursorProjectCandidates().map((name) =>
+    path.join(cursorProjectsDir, name, "terminals")
+  );
+
+  for (const dirPath of candidates) {
+    try {
+      const stat = await fs.stat(dirPath);
+      if (stat.isDirectory()) {
+        return dirPath;
+      }
+    } catch {
+      // Keep checking candidates.
+    }
+  }
+
+  // Fallback: scan folders and pick the first entry that has a terminals directory and resembles this repo name.
+  const entries = await fs.readdir(cursorProjectsDir, { withFileTypes: true });
+  const normalizedRepoName = sanitizePathSegment(projectName);
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const normalizedEntry = sanitizePathSegment(entry.name);
+    if (!normalizedEntry.includes(normalizedRepoName)) continue;
+    const maybeDir = path.join(cursorProjectsDir, entry.name, "terminals");
+    try {
+      const stat = await fs.stat(maybeDir);
+      if (stat.isDirectory()) {
+        return maybeDir;
+      }
+    } catch {
+      // Continue searching.
+    }
+  }
+
+  throw new Error(`Unable to locate Cursor terminals directory under ${cursorProjectsDir}`);
+}
 
 /** @type {Record<string, {id: string, name: string, command: string, args: string[], env: Record<string, string>, healthUrl?: string}>} */
 const serviceConfigs = {
@@ -68,6 +129,50 @@ function appendLog(serviceId, line) {
 
 function commandText(config) {
   return `${config.command} ${config.args.join(" ")}`;
+}
+
+function parseTerminalMetadata(content) {
+  const lines = content.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === "---");
+  if (start < 0) return {};
+  const end = lines.findIndex((line, idx) => idx > start && line.trim() === "---");
+  if (end < 0) return {};
+
+  /** @type {Record<string, string>} */
+  const meta = {};
+  for (let i = start + 1; i < end; i += 1) {
+    const line = lines[i];
+    const match = line.match(/^([^:]+):\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1].trim();
+    const rawValue = (match[2] ?? "").trim();
+
+    if (rawValue === "|") {
+      const block = [];
+      let j = i + 1;
+      while (j < end) {
+        const blockLine = lines[j];
+        if (blockLine.startsWith("  ")) {
+          block.push(blockLine.slice(2));
+          j += 1;
+          continue;
+        }
+        if (blockLine.trim() === "") {
+          block.push("");
+          j += 1;
+          continue;
+        }
+        break;
+      }
+      meta[key] = block.join("\n").trim();
+      i = j - 1;
+      continue;
+    }
+
+    meta[key] = rawValue;
+  }
+
+  return meta;
 }
 
 function serviceStatus(serviceId) {
@@ -247,6 +352,7 @@ async function callTts(text, baseUrl) {
 
 async function listCursorTerminals() {
   try {
+    const cursorTerminalsDir = await resolveCursorTerminalsDir();
     const entries = await fs.readdir(cursorTerminalsDir, { withFileTypes: true });
     const terminalFiles = entries
       .filter((entry) => entry.isFile() && entry.name.endsWith(".txt"))
@@ -257,31 +363,14 @@ async function listCursorTerminals() {
       terminalFiles.map(async (filename) => {
         const terminalId = filename.replace(/\.txt$/i, "");
         const content = await fs.readFile(path.join(cursorTerminalsDir, filename), "utf-8");
-        const lines = content.split(/\r?\n/);
-        const meta = {};
-        let inMeta = false;
-        for (const line of lines) {
-          if (line.trim() === "---") {
-            inMeta = !inMeta;
-            continue;
-          }
-          if (!inMeta) {
-            if (meta.cwd || meta.last_command || meta.last_exit_code !== undefined) {
-              break;
-            }
-            continue;
-          }
-          const match = line.match(/^([^:]+):\s*(.*)$/);
-          if (match) {
-            meta[match[1].trim()] = match[2].trim();
-          }
-        }
+        const meta = parseTerminalMetadata(content);
 
         return {
           id: terminalId,
           pid: Number(meta.pid) || null,
           cwd: meta.cwd || "",
-          lastCommand: meta.last_command || "",
+          activeCommand: meta.active_command || "",
+          lastCommand: meta.last_command || meta.active_command || "",
           lastExitCode: meta.last_exit_code ?? "",
         };
       })
