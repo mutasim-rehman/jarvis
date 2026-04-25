@@ -59,6 +59,7 @@ interface DesktopApi {
   interactWithBackend: (
     text: string,
     baseUrl: string,
+    chatProvider?: "huggingface" | "ollama",
   ) => Promise<{ ok: true; data: unknown } | { ok: false; error: string }>;
   transcribeAudio: (
     wavBytesBase64: string,

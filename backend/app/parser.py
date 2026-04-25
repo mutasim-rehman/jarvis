@@ -2,7 +2,7 @@ import json
 import re
 import sys
 import os
-from pathlib import Path
+from typing import Any
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -13,56 +13,19 @@ from .heuristics import (
     reconcile_llm_intent,
     should_drop_workflow_without_domain,
 )
-from .llm import generate_chat
+from backend.chatbot import ProviderUnavailableError, generate_chat
+from backend.chatbot.personality import build_base_system_message
 
 ALLOWED_INTENTS = set(WORKFLOWS.keys()) | {"GENERAL_CHAT", "UNKNOWN"}
 SUPPORTED_INTENTS_TEXT = "\n".join(
     f"   - {intent}" for intent in sorted(ALLOWED_INTENTS) if intent != "UNKNOWN"
 )
 
-_DEFAULT_PERSONALITY_PROMPT = """
-PERSONALITY:
-- Speak as JARVIS: calm, composed, capable, semi-formal.
-- Address the user as "Sir" by default.
-- Keep responses concise, clear, and structured.
-- Use subtle dry wit occasionally, never disrespectful.
-- Avoid slang/filler words.
-"""
-
-
-def _load_personality_prompt() -> str:
-    profile_path = Path(__file__).resolve().parents[2] / "jarvis.json"
-    try:
-        data = json.loads(profile_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return _DEFAULT_PERSONALITY_PROMPT.strip()
-
-    identity = data.get("identity", {}) if isinstance(data, dict) else {}
-    traits = data.get("personality_traits", {}) if isinstance(data, dict) else {}
-    speech = data.get("speech_style", {}) if isinstance(data, dict) else {}
-    objective = data.get("core_objective", {}) if isinstance(data, dict) else {}
-
-    lines = [
-        "PERSONALITY:",
-        f'- Name: {identity.get("name", "JARVIS")}.',
-        f'- Role: {identity.get("role", "Intelligent Artificial Assistant")}.',
-        f'- Address user as "{identity.get("addressing_style", {}).get("primary", "Sir")}" by default.',
-        f'- Tone: {traits.get("tone", "calm")}, formality: {traits.get("formality", "semi-formal")}, confidence: {traits.get("confidence", "high")}.',
-        f'- Speech style: {speech.get("sentence_structure", "clear and structured")}, verbosity: {speech.get("verbosity", "moderate")}.',
-        '- Keep responses clear and concise; avoid slang and filler words.',
-        '- Humor may be dry/subtle and respectful only when appropriate.',
-        f'- Core objective: {objective.get("primary", "Assist efficiently and accurately")}.',
-    ]
-    return "\n".join(lines)
-
-
-PERSONALITY_PROMPT = _load_personality_prompt()
+BASE_SYSTEM_PROMPT = build_base_system_message()
 
 
 SYSTEM_PROMPT = f"""
-You are JARVIS, a professional and proactive AI assistant.
-Your goal is to understand user intent and provide a natural response followed by a structural command IF an action is required.
-{PERSONALITY_PROMPT}
+{BASE_SYSTEM_PROMPT}
 
 CRITICAL RULES:
 1. You MUST ONLY output intents from this list:
@@ -278,12 +241,24 @@ def _build_command(intent: str, target: str | None) -> ActionCommand | None:
     return command
 
 
-def _wrap(message: str, command: ActionCommand | None) -> AssistantResponse:
+def _provider_unavailable_meta(provider: str, reason: str) -> dict[str, Any]:
+    return {
+        "chatbot_provider": provider,
+        "status": "unavailable",
+        "reason": reason,
+        "fallback_options": [
+            {"id": "retry_huggingface", "label": "Wait and retry Hugging Face"},
+            {"id": "run_local_ollama", "label": "Run locally with Ollama"},
+        ],
+    }
+
+
+def _wrap(message: str, command: ActionCommand | None, meta: dict[str, Any] | None = None) -> AssistantResponse:
     route = RouteKind.DESKTOP_EXECUTION if command else RouteKind.INFORMATIONAL
-    return AssistantResponse(message=message, command=command, route=route)
+    return AssistantResponse(message=message, command=command, route=route, meta=meta or {})
 
 
-async def parse_intent(text: str) -> AssistantResponse:
+async def parse_intent(text: str, chat_provider: str | None = None) -> AssistantResponse:
     quick = _quick_conversational_response(text)
     if quick:
         return _wrap(quick, None)
@@ -307,17 +282,31 @@ async def parse_intent(text: str) -> AssistantResponse:
     base_message = ""
     content = ""
     try:
-        response = await generate_chat(messages=messages)
+        if chat_provider:
+            response = await generate_chat(messages=messages, preferred_provider=chat_provider)
+        else:
+            response = await generate_chat(messages=messages)
         content = response.get("message", {}).get("content", "").strip()
         base_message = _extract_conversational_message(content) if content else ""
+    except ProviderUnavailableError as exc:
+        fb_intent, fb_target = _fallback_intent_from_user_text(text)
+        if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
+            cmd = _build_command(fb_intent, fb_target)
+            return _wrap("On it.", cmd)
+        provider_name = exc.provider.capitalize()
+        return _wrap(
+            f"{provider_name} chatbot is unavailable right now. Choose whether to wait/retry or run locally with Ollama.",
+            None,
+            meta=_provider_unavailable_meta(exc.provider, exc.reason),
+        )
     except RuntimeError:
-        # Graceful fallback when Ollama is down/unreachable.
+        # Graceful fallback when the configured provider fails unexpectedly.
         fb_intent, fb_target = _fallback_intent_from_user_text(text)
         if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
             cmd = _build_command(fb_intent, fb_target)
             return _wrap("On it.", cmd)
         return _wrap(
-            "I couldn't reach the local model right now. Please start Ollama and try again.",
+            "I couldn't reach the chatbot provider right now. Please try again.",
             None,
         )
 

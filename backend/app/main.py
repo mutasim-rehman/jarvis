@@ -40,7 +40,10 @@ async def parse_text(
     request: ParseRequest,
     _: None = Depends(verify_dev_api_key),
 ):
-    command = await parse_intent(request.text)
+    if request.chat_provider:
+        command = await parse_intent(request.text, chat_provider=request.chat_provider)
+    else:
+        command = await parse_intent(request.text)
     return ParseResponse(command=command, original_text=request.text)
 
 
@@ -54,7 +57,10 @@ async def interact(
     Returns both the assistant's message and the execution results.
     """
     # 1. Parse intent
-    assistant_resp = await parse_intent(request.text)
+    if request.chat_provider:
+        assistant_resp = await parse_intent(request.text, chat_provider=request.chat_provider)
+    else:
+        assistant_resp = await parse_intent(request.text)
     
     execution_result = None
     

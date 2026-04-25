@@ -2,6 +2,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    chat_primary_provider: str = "huggingface"
+    chat_timeout_seconds: float = 45.0
+
+    hf_space_id: str = "mutasim-rehman/jarvis"
+    hf_api_name: str = "/respond"
+    hf_token: str = ""
+    hf_system_message: str = ""
+    hf_max_tokens: float = 512.0
+    hf_temperature: float = 0.7
+    hf_top_p: float = 0.95
+
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "llama3.2:1b"
 

@@ -11,8 +11,8 @@
 | **Auth between services** | Shared secret in `Authorization: Bearer` or `X-API-Key`; rotate via env; document mTLS as upgrade path |
 | **Session / correlation** | UUID (`uuid4`) per request; propagate in JSON body and logs |
 | **Retries** | [tenacity](https://github.com/jd/tenacity) or httpx built-in retries for executor calls |
-| **Container (optional)** | [Docker](https://www.docker.com/) Compose: services `backend`, `executor`, `ollama` (Ollama often host-mounted or separate host) |
-| **Chat path unchanged** | Backend still uses **Ollama** (`llama3.2` / `llama3.3`) for NL → intent before calling the executor |
+| **Container (optional)** | [Docker](https://www.docker.com/) Compose: services `backend`, `executor` (+ optional `ollama` for local fallback) |
+| **Chat path** | Backend uses **Hugging Face Space API** for NL → intent; local Ollama can be selected as fallback when HF is unavailable |
 
 ## Scope
 

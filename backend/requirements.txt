@@ -3,6 +3,7 @@ uvicorn
 pydantic
 pydantic-settings
 httpx
+gradio_client
 pytest
 vosk
 numpy

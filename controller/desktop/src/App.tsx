@@ -13,6 +13,14 @@ type ConversationMessage = {
   role: ConversationRole;
   text: string;
 };
+type ChatProviderOverride = "huggingface" | "ollama";
+
+type ChatbotFallbackMeta = {
+  status?: string;
+  chatbot_provider?: string;
+  reason?: string;
+  fallback_options?: Array<{ id?: string; label?: string }>;
+};
 
 type BrowserSpeechRecognition = {
   continuous: boolean;
@@ -66,6 +74,17 @@ function extractAssistantText(data: unknown): string {
     }
   }
   return JSON.stringify(data, null, 2);
+}
+
+function extractFallbackMeta(data: unknown): ChatbotFallbackMeta | null {
+  if (!data || typeof data !== "object") return null;
+  const assistantResponse = (data as Record<string, unknown>).assistant_response;
+  if (!assistantResponse || typeof assistantResponse !== "object") return null;
+  const meta = (assistantResponse as Record<string, unknown>).meta;
+  if (!meta || typeof meta !== "object") return null;
+  const candidate = meta as ChatbotFallbackMeta;
+  if (candidate.status !== "unavailable") return null;
+  return candidate;
 }
 
 function mergeFloat32Chunks(chunks: Float32Array[], totalLength: number): Float32Array {
@@ -261,19 +280,39 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   }, []);
 
-  const sendText = useCallback(async (raw: string) => {
+  const sendText = useCallback(async function sendTextImpl(
+    raw: string,
+    chatProvider?: ChatProviderOverride,
+    suppressUserMessage = false,
+  ) {
     const text = raw.trim();
     if (!text) return;
-    addMessage("user", text);
+    if (!suppressUserMessage) {
+      addMessage("user", text);
+    }
     setChatLoading(true);
     try {
-      const result = await window.desktopApi.interactWithBackend(text, backendBaseUrl);
+      const result = await window.desktopApi.interactWithBackend(text, backendBaseUrl, chatProvider);
       if ("error" in result) {
         addMessage("system", `Backend error: ${result.error}`);
         return;
       }
       const reply = extractAssistantText(result.data);
+      const fallbackMeta = extractFallbackMeta(result.data);
       addMessage("assistant", reply);
+      if (fallbackMeta && chatProvider !== "ollama") {
+        const provider = fallbackMeta.chatbot_provider ?? "huggingface";
+        const useLocal = window.confirm(
+          `${provider} is currently unavailable.\n\nPress OK to run this request locally with Ollama.\nPress Cancel to wait and retry Hugging Face later.`
+        );
+        if (useLocal) {
+          addMessage("system", "Switching this request to local Ollama.");
+          await sendTextImpl(text, "ollama", true);
+        } else {
+          addMessage("system", "Keeping Hugging Face mode. Retry once it is available.");
+        }
+        return;
+      }
       if (speakModeOn) {
         speakAssistant(reply);
       }

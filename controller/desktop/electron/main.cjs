@@ -284,16 +284,20 @@ async function checkHealth(serviceId) {
   }
 }
 
-async function callInteract(text, baseUrl) {
+async function callInteract(text, baseUrl, chatProvider) {
   const url = `${baseUrl.replace(/\/+$/, "")}/api/interact`;
   let response;
+  const body = { text };
+  if (chatProvider) {
+    body.chat_provider = chatProvider;
+  }
   try {
     response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
     });
   } catch (error) {
@@ -443,9 +447,9 @@ ipcMain.handle("services:stop-all", async () => {
   return listServiceStatuses();
 });
 ipcMain.handle("services:health", async (_event, serviceId) => checkHealth(serviceId));
-ipcMain.handle("backend:interact", async (_event, text, baseUrl) => {
+ipcMain.handle("backend:interact", async (_event, text, baseUrl, chatProvider) => {
   try {
-    const data = await callInteract(text, baseUrl);
+    const data = await callInteract(text, baseUrl, chatProvider);
     return { ok: true, data };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

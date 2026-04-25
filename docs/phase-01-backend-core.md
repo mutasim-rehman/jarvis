@@ -9,13 +9,14 @@
 | **Runtime** | Python 3.12+ |
 | **API** | [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) |
 | **Validation / shared models** | [Pydantic v2](https://docs.pydantic.dev/) (aligned with `shared/` schemas; OpenAPI export for clients) |
-| **Chat & NLP (local LLM)** | [Ollama](https://ollama.com/) — **`llama3.2`** or **`llama3.3`** (pick one per deploy; configurable via `OLLAMA_MODEL`, e.g. `llama3.2`, `llama3.3`) |
-| **Ollama client** | [httpx](https://www.python-httpx.org/) (HTTP to Ollama `/api/chat` or `/api/generate`) |
+| **Chat & NLP (primary)** | [Hugging Face Spaces](https://huggingface.co/spaces) (API-first chatbot provider; configurable Space ID and endpoint) |
+| **HF Space client** | [gradio_client](https://www.gradio.app/docs/python-client/introduction) (calls Space APIs such as `/respond`) |
+| **Local fallback (optional)** | [Ollama](https://ollama.com/) for explicit local fallback when remote provider is unavailable |
 | **Prompting** | Structured-output prompts (JSON in response) + optional few-shot examples; fallback regex/heuristics for critical intents if the model fails validation |
 | **Config** | [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) — `OLLAMA_BASE_URL`, model name, API host/port |
 | **Testing** | [pytest](https://pytest.org/) + [httpx ASGI](https://www.python-httpx.org/advanced/#asgi-application) for API tests |
 
-Ollama runs **locally** (same machine or LAN); the backend never bundles the weights—only talks to the Ollama HTTP API.
+Primary chatbot runs via Hugging Face Space API; Ollama can remain available locally as an explicit fallback path.
 
 ## Scope
 

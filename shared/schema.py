@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from .workflows import IntentType  # re-export for clients/tests
 
 # Bump when breaking API or command shape changes (executor / controllers depend on this).
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 
 
 class RouteKind(str, Enum):
@@ -44,10 +44,18 @@ class AssistantResponse(BaseModel):
         default=RouteKind.INFORMATIONAL,
         description="Whether this turn should trigger desktop execution downstream.",
     )
+    meta: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional provider/runtime metadata for clients (e.g., fallback options).",
+    )
 
 
 class ParseRequest(BaseModel):
     text: str
+    chat_provider: Optional[str] = Field(
+        default=None,
+        description="Optional per-request chatbot provider override (e.g., huggingface, ollama).",
+    )
 
 
 class ParseResponse(BaseModel):

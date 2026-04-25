@@ -22,7 +22,7 @@ Both mobile and desktop controllers use the same pipeline into the backend and e
 
 | Area | Role |
 |------|------|
-| **Backend** | NLP → intent, command generation, routing, APIs (chat, execute, auth); memory later |
+| **Backend** | NLP → intent, command generation, routing, APIs (chat via Hugging Face Space, execute, auth); memory later |
 | **Executor** | Receives commands; opens apps, files, browser automation, input simulation; returns status |
 | **Controller** | **Mobile (Flutter):** voice in/out, talks to backend. **Desktop:** chat, commands, monitoring |
 | **Hub** | Landing, features, demos, optional dashboard |
@@ -57,6 +57,19 @@ Work is staged in seven phases. Each phase has a dedicated plan under [`docs/`](
 Build a system that **understands**, **decides**, **executes**, and **assists continuously** — an execution system, not a chatbot.
 
 For scope, milestones, and deliverables per stage, see the phase documents in `docs/`.
+
+## Chat Provider Configuration
+
+The backend chatbot provider is Hugging Face Space by default, with local Ollama available as an explicit fallback when selected by the user.
+
+Environment variables (backend):
+
+- `CHAT_PRIMARY_PROVIDER` (`huggingface` by default; can be `ollama`)
+- `HF_SPACE_ID` (default: `mutasim-rehman/jarvis`)
+- `HF_API_NAME` (default: `/respond`)
+- `HF_TOKEN` (optional; only needed for private Spaces)
+- `HF_MAX_TOKENS`, `HF_TEMPERATURE`, `HF_TOP_P`
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (used for local fallback)
 
 ## Model Attributions
 
