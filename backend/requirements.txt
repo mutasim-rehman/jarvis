@@ -4,6 +4,7 @@ pydantic
 pydantic-settings
 httpx
 gradio_client
+aiofiles>=24.1.0
 pytest
 vosk
 numpy

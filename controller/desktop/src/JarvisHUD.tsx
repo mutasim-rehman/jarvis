@@ -4,22 +4,23 @@ import { jarvisCoreVisualHtml } from "./jarvisCoreVisualHtml";
 type JarvisHUDProps = {
   speakModeOn: boolean;
   conversationHidden: boolean;
+  isSpeaking: boolean;
 };
 
-export const JarvisHUD: React.FC<JarvisHUDProps> = ({ speakModeOn, conversationHidden }) => {
+export const JarvisHUD: React.FC<JarvisHUDProps> = ({ speakModeOn, conversationHidden, isSpeaking }) => {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const postModeToFrame = () => {
     const contentWindow = frameRef.current?.contentWindow;
     if (!contentWindow) return;
     contentWindow.postMessage({
       type: "jarvis-visual-mode",
-      payload: { speakModeOn, conversationHidden },
+      payload: { speakModeOn, conversationHidden, isSpeaking },
     }, "*");
   };
 
   useEffect(() => {
     postModeToFrame();
-  }, [conversationHidden, speakModeOn]);
+  }, [conversationHidden, isSpeaking, speakModeOn]);
 
   return (
     <iframe

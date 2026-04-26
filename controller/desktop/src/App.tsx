@@ -14,6 +14,7 @@ type ConversationMessage = {
   text: string;
 };
 type ChatProviderOverride = "huggingface" | "ollama";
+type BotMode = "jarvis_cloud" | "huggingface_cloud" | "local_ollama";
 
 type ChatbotFallbackMeta = {
   status?: string;
@@ -183,9 +184,11 @@ export default function App() {
   const [health, setHealth] = useState<Record<"backend" | "executor", HealthResponse>>(defaultHealthMap);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [botMode, setBotMode] = useState<BotMode>("jarvis_cloud");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [micOn, setMicOn] = useState(false);
   const [speakModeOn, setSpeakModeOn] = useState(false);
+  const [assistantSpeaking, setAssistantSpeaking] = useState(false);
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminals, setTerminals] = useState<TerminalSnapshot[]>([]);
@@ -196,6 +199,7 @@ export default function App() {
   const localMicStateRef = useRef<LocalMicState | null>(null);
   const localMicInitializingRef = useRef(false);
   const localTranscribeBusyRef = useRef(false);
+  const micSuppressUntilRef = useRef(0);
 
   const servicesById = useMemo(
     () => services.reduce<Record<string, ServiceStatus>>((acc, service) => {
@@ -206,6 +210,21 @@ export default function App() {
   );
   
   const areAllCoreRunning = coreServiceIds.every((id) => servicesById[id]?.running);
+  const activeProvider = useMemo<ChatProviderOverride>(() => (
+    botMode === "local_ollama" ? "ollama" : "huggingface"
+  ), [botMode]);
+  const activeBotLabel = useMemo(() => {
+    if (botMode === "local_ollama") return "Local Bot (Ollama)";
+    if (botMode === "huggingface_cloud") return "Cloud Bot (Hugging Face)";
+    return "Cloud Bot (Jarvis)";
+  }, [botMode]);
+  const cycleBotMode = useCallback(() => {
+    setBotMode((current) => {
+      if (current === "jarvis_cloud") return "huggingface_cloud";
+      if (current === "huggingface_cloud") return "local_ollama";
+      return "jarvis_cloud";
+    });
+  }, []);
   const runningTerminals = terminals.filter((terminal) => {
     if (terminal.activeCommand.trim()) return true;
     return terminal.lastExitCode === "" || terminal.lastExitCode === "null";
@@ -270,15 +289,39 @@ export default function App() {
     await refreshAll();
   };
 
+  const suppressMicFor = useCallback((ms: number) => {
+    const until = Date.now() + Math.max(0, ms);
+    micSuppressUntilRef.current = Math.max(micSuppressUntilRef.current, until);
+  }, []);
+
+  const isMicSuppressed = useCallback(() => Date.now() < micSuppressUntilRef.current, []);
+
   const speakAssistant = useCallback((text: string) => {
-    if (!text.trim() || !("speechSynthesis" in window)) return;
+    const cleanText = text.trim();
+    if (!cleanText || !("speechSynthesis" in window)) return;
+    const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
+    // Pre-emptively suppress transcription for the expected TTS playback duration.
+    suppressMicFor(Math.min(18000, Math.max(1200, wordCount * 340 + 900)));
+    setAssistantSpeaking(false);
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.02;
     utterance.pitch = 1.0;
     utterance.lang = "en-US";
+    utterance.onstart = () => {
+      setAssistantSpeaking(true);
+      suppressMicFor(1200);
+    };
+    utterance.onend = () => {
+      setAssistantSpeaking(false);
+      suppressMicFor(850);
+    };
+    utterance.onerror = () => {
+      setAssistantSpeaking(false);
+      suppressMicFor(650);
+    };
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [suppressMicFor]);
 
   const sendText = useCallback(async function sendTextImpl(
     raw: string,
@@ -291,8 +334,9 @@ export default function App() {
       addMessage("user", text);
     }
     setChatLoading(true);
+    const provider = chatProvider ?? activeProvider;
     try {
-      const result = await window.desktopApi.interactWithBackend(text, backendBaseUrl, chatProvider);
+      const result = await window.desktopApi.interactWithBackend(text, backendBaseUrl, provider);
       if ("error" in result) {
         addMessage("system", `Backend error: ${result.error}`);
         return;
@@ -300,7 +344,7 @@ export default function App() {
       const reply = extractAssistantText(result.data);
       const fallbackMeta = extractFallbackMeta(result.data);
       addMessage("assistant", reply);
-      if (fallbackMeta && chatProvider !== "ollama") {
+      if (fallbackMeta && provider !== "ollama") {
         const provider = fallbackMeta.chatbot_provider ?? "huggingface";
         const useLocal = window.confirm(
           `${provider} is currently unavailable.\n\nPress OK to run this request locally with Ollama.\nPress Cancel to wait and retry Hugging Face later.`
@@ -323,7 +367,7 @@ export default function App() {
       setChatLoading(false);
       await refreshHealth();
     }
-  }, [addMessage, refreshHealth, speakAssistant, speakModeOn]);
+  }, [activeProvider, addMessage, refreshHealth, speakAssistant, speakModeOn]);
 
   const stopMicRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -350,6 +394,9 @@ export default function App() {
     if (localTranscribeBusyRef.current) {
       return;
     }
+    if (isMicSuppressed()) {
+      return;
+    }
     const pcm = downsampleTo16BitPcm(audio, inputSampleRate, 16000);
     if (pcm.length < 8000) {
       return;
@@ -364,7 +411,7 @@ export default function App() {
         return;
       }
       const transcript = (response.data.text ?? "").trim();
-      if (transcript) {
+      if (transcript && !isMicSuppressed()) {
         void sendText(transcript);
       }
     } catch (error) {
@@ -373,7 +420,7 @@ export default function App() {
     } finally {
       localTranscribeBusyRef.current = false;
     }
-  }, [addMessage, sendText]);
+  }, [addMessage, isMicSuppressed, sendText]);
 
   const startLocalMicCapture = useCallback(async () => {
     if (localMicStateRef.current || localMicInitializingRef.current) return;
@@ -409,6 +456,13 @@ export default function App() {
 
       processor.onaudioprocess = (event) => {
         if (!micOnRef.current) return;
+        if (isMicSuppressed()) {
+          state.chunks = [];
+          state.sampleCount = 0;
+          state.rmsSum = 0;
+          state.rmsFrames = 0;
+          return;
+        }
         const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
         state.chunks.push(chunk);
         state.sampleCount += chunk.length;
@@ -451,7 +505,7 @@ export default function App() {
       addMessage("system", `Mic access error: ${message}`);
       setMicOn(false);
     }
-  }, [addMessage, transcribeLocalSegment]);
+  }, [addMessage, isMicSuppressed, transcribeLocalSegment]);
 
   const startMicRecognition = useCallback(() => {
     if (recognitionRef.current) return;
@@ -490,7 +544,7 @@ export default function App() {
         const result = event.results[index];
         if (result.isFinal) {
           const transcript = result[0]?.transcript?.trim() ?? "";
-          if (transcript) {
+          if (transcript && !isMicSuppressed()) {
             void sendText(transcript);
           }
         }
@@ -541,7 +595,7 @@ export default function App() {
     };
     recognition.start();
     recognitionRef.current = recognition;
-  }, [addMessage, sendText, startLocalMicCapture]);
+  }, [addMessage, isMicSuppressed, sendText, startLocalMicCapture]);
 
   useEffect(() => {
     micOnRef.current = micOn;
@@ -570,6 +624,7 @@ export default function App() {
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    setAssistantSpeaking(false);
   }, [stopLocalMicCapture, stopMicRecognition]);
 
   const loadTerminals = async () => {
@@ -619,6 +674,9 @@ export default function App() {
         <button type="button" onClick={() => void window.desktopApi.openDevTools()}>
           DevTools
         </button>
+        <button type="button" onClick={cycleBotMode}>
+          {activeBotLabel}
+        </button>
         <span className={`badge ${health.backend.ok ? "ok" : "error"}`}>
           Backend: {health.backend.ok ? "Online" : "Offline"}
         </span>
@@ -654,12 +712,17 @@ export default function App() {
       <section className={`layout ${speakModeOn ? "layout-speak" : ""}`}>
         <div className="visual-pane">
           <div className="visual-shell">
-            <JarvisHUD speakModeOn={speakModeOn} conversationHidden={speakModeOn} />
+            <JarvisHUD
+              speakModeOn={speakModeOn}
+              conversationHidden={speakModeOn}
+              isSpeaking={assistantSpeaking}
+            />
           </div>
         </div>
 
         <aside className={`conversation-pane ${speakModeOn ? "hidden" : ""}`}>
           <h2>Jarvis Conversation</h2>
+          <p className="empty">Active chat mode: {activeBotLabel}</p>
           <div className="messages">
             {messages.length === 0 ? (
               <p className="empty">No conversation yet.</p>
@@ -692,6 +755,7 @@ export default function App() {
                 setSpeakModeOn((value) => !value);
                 if (speakModeOn) {
                   window.speechSynthesis.cancel();
+                  setAssistantSpeaking(false);
                 }
               }}
             >
@@ -708,6 +772,7 @@ export default function App() {
           onClick={() => {
             setSpeakModeOn(false);
             window.speechSynthesis.cancel();
+            setAssistantSpeaking(false);
           }}
         >
           Speak Off

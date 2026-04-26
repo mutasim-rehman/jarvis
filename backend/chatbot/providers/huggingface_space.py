@@ -1,5 +1,6 @@
 import asyncio
 import json
+import types
 from typing import Any
 
 from gradio_client import Client
@@ -7,6 +8,16 @@ from gradio_client import Client
 from ..config import settings
 from ..personality import build_base_system_message
 from ..types import ProviderUnavailableError
+
+
+def _resolve_space_id() -> str:
+    space_id = settings.resolved_hf_space_id()
+    if not space_id:
+        raise ProviderUnavailableError(
+            provider="huggingface",
+            reason="HF_SPACE_ID is missing. Set HF_SPACE_ID or HF_SPACE_LINK in .env.",
+        )
+    return space_id
 
 
 def _extract_system_message(messages: list[dict[str, Any]]) -> str:
@@ -35,10 +46,14 @@ def _predict_with_client(
     temperature: float,
     top_p: float,
 ) -> Any:
-    kwargs: dict[str, Any] = {}
+    # Compatibility shim for Python 3.13 when third-party deps still reference asyncio.coroutine.
+    if not hasattr(asyncio, "coroutine"):
+        asyncio.coroutine = types.coroutine  # type: ignore[attr-defined]
+
+    kwargs: dict[str, Any] = {"verbose": False}
     if settings.hf_token:
         kwargs["hf_token"] = settings.hf_token
-    client = Client(settings.hf_space_id, **kwargs)
+    client = Client(_resolve_space_id(), **kwargs)
     return client.predict(
         message=message,
         system_message=system_message,
