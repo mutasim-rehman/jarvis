@@ -18,6 +18,7 @@ class ExecutorClient:
             settings.api_key_header: self.api_key,
             "Content-Type": "application/json",
         }
+        self._client = httpx.AsyncClient(timeout=self.timeout)
 
     async def run_command(self, command: ActionCommand) -> Optional[RunCommandResponse]:
         """Forward an ActionCommand to the executor and return the outcome."""
@@ -25,21 +26,19 @@ class ExecutorClient:
         payload = RunCommandRequest(command=command).model_dump()
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                res = await client.post(url, json=payload, headers=self.headers)
-                
-                if res.status_code == 401:
-                    logger.error("Executor auth failed (401).")
-                    return None
-                
-                res.raise_for_status()
-                data = res.json()
-                try:
-                    return RunCommandResponse(**data)
-                except Exception as ve:
-                    logger.error(f"Executor response schema mismatch: {ve}")
-                    logger.error(f"Raw response: {data}")
-                    return None
+            res = await self._client.post(url, json=payload, headers=self.headers)
+            if res.status_code == 401:
+                logger.error("Executor auth failed (401).")
+                return None
+
+            res.raise_for_status()
+            data = res.json()
+            try:
+                return RunCommandResponse(**data)
+            except Exception as ve:
+                logger.error(f"Executor response schema mismatch: {ve}")
+                logger.error(f"Raw response: {data}")
+                return None
         except httpx.ReadTimeout:
             logger.error(f"Executor timed out after {self.timeout}s")
             return None

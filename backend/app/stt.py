@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import logging
+import time
 import threading
 import wave
 from pathlib import Path
@@ -20,6 +22,7 @@ except ImportError as exc:  # pragma: no cover - depends on environment packages
 
 _model_lock = threading.Lock()
 _model: Model | None = None  # type: ignore[type-arg]
+logger = logging.getLogger(__name__)
 
 
 def _resolve_model_path() -> Path:
@@ -55,6 +58,10 @@ def transcribe_wav_bytes(audio_bytes: bytes) -> str:
     if not audio_bytes:
         raise ValueError("No audio payload provided.")
 
+    load_started = time.perf_counter()
+    model = _get_model()
+    model_load_ms = (time.perf_counter() - load_started) * 1000
+    started = time.perf_counter()
     try:
         with wave.open(io.BytesIO(audio_bytes), "rb") as wav_file:
             channels = wav_file.getnchannels()
@@ -69,7 +76,7 @@ def transcribe_wav_bytes(audio_bytes: bytes) -> str:
             if compression != "NONE":
                 raise ValueError("Audio must be uncompressed PCM WAV.")
 
-            recognizer = KaldiRecognizer(_get_model(), float(frame_rate))
+            recognizer = KaldiRecognizer(model, float(frame_rate))
             recognizer.SetWords(False)
             while True:
                 chunk = wav_file.readframes(4000)
@@ -78,6 +85,21 @@ def transcribe_wav_bytes(audio_bytes: bytes) -> str:
                 recognizer.AcceptWaveform(chunk)
 
             final = json.loads(recognizer.FinalResult())
-            return str(final.get("text", "")).strip()
+            text = str(final.get("text", "")).strip()
+            logger.debug(
+                "stt timing model_load_ms=%.1f total_ms=%.1f bytes=%d frame_rate=%d chars=%d",
+                model_load_ms,
+                (time.perf_counter() - started) * 1000,
+                len(audio_bytes),
+                frame_rate,
+                len(text),
+            )
+            return text
     except wave.Error as exc:
         raise ValueError(f"Invalid WAV audio: {exc}") from exc
+
+
+def warmup_model() -> None:
+    started = time.perf_counter()
+    _get_model()
+    logger.info("stt model warmup complete in %.1fms", (time.perf_counter() - started) * 1000)

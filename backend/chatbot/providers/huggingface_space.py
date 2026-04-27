@@ -1,6 +1,7 @@
 import asyncio
 import json
 import types
+import threading
 from typing import Any
 
 from gradio_client import Client
@@ -8,6 +9,10 @@ from gradio_client import Client
 from ..config import settings
 from ..personality import build_base_system_message
 from ..types import ProviderUnavailableError
+
+_client_lock = threading.Lock()
+_client: Client | None = None
+_client_space_id = ""
 
 
 def _resolve_space_id() -> str:
@@ -50,10 +55,16 @@ def _predict_with_client(
     if not hasattr(asyncio, "coroutine"):
         asyncio.coroutine = types.coroutine  # type: ignore[attr-defined]
 
-    kwargs: dict[str, Any] = {"verbose": False}
-    if settings.hf_token:
-        kwargs["hf_token"] = settings.hf_token
-    client = Client(_resolve_space_id(), **kwargs)
+    global _client, _client_space_id
+    space_id = _resolve_space_id()
+    with _client_lock:
+        if _client is None or _client_space_id != space_id:
+            kwargs: dict[str, Any] = {"verbose": False}
+            if settings.hf_token:
+                kwargs["hf_token"] = settings.hf_token
+            _client = Client(space_id, **kwargs)
+            _client_space_id = space_id
+        client = _client
     return client.predict(
         message=message,
         system_message=system_message,

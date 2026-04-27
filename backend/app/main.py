@@ -1,6 +1,9 @@
 import sys
 import os
 import base64
+import logging
+import time
+import asyncio
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -11,7 +14,7 @@ from shared.schema import InteractResponse, ParseRequest, ParseResponse, RouteKi
 from .config import settings
 from .parser import parse_intent
 from .executor_client import executor_client
-from .stt import transcribe_wav_bytes
+from .stt import transcribe_wav_bytes, warmup_model
 from .tts import synthesize_kokoro_wav
 
 app = FastAPI(
@@ -19,6 +22,23 @@ app = FastAPI(
     version=SCHEMA_VERSION,
     description="Phase 1: natural language → structured commands (OpenAPI for clients).",
 )
+logger = logging.getLogger(__name__)
+
+
+def _log_executor_task_result(task: asyncio.Task) -> None:
+    try:
+        result = task.result()
+        logger.info("executor background completed has_result=%s", bool(result))
+    except Exception:
+        logger.exception("executor background task failed")
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    try:
+        warmup_model()
+    except Exception as exc:  # pragma: no cover - warmup depends on local model availability
+        logger.warning("stt warmup skipped: %s", exc)
 
 
 async def verify_dev_api_key(
@@ -56,17 +76,44 @@ async def interact(
     Phase 3: Parse natural language and execute the command if applicable.
     Returns both the assistant's message and the execution results.
     """
+    request_started = time.perf_counter()
     # 1. Parse intent
+    parse_started = time.perf_counter()
     if request.chat_provider:
         assistant_resp = await parse_intent(request.text, chat_provider=request.chat_provider)
     else:
         assistant_resp = await parse_intent(request.text)
+    parse_ms = (time.perf_counter() - parse_started) * 1000
     
     execution_result = None
     
     # 2. Execute if a command exists and routing allows it
+    execute_ms = 0.0
     if assistant_resp.command and assistant_resp.route == RouteKind.DESKTOP_EXECUTION:
-        execution_result = await executor_client.run_command(assistant_resp.command)
+        execute_started = time.perf_counter()
+        run_task = asyncio.create_task(executor_client.run_command(assistant_resp.command))
+        try:
+            execution_result = await asyncio.wait_for(
+                asyncio.shield(run_task),
+                timeout=max(0.1, settings.executor_inline_wait_seconds),
+            )
+            execute_ms = (time.perf_counter() - execute_started) * 1000
+        except asyncio.TimeoutError:
+            run_task.add_done_callback(_log_executor_task_result)
+            execute_ms = (time.perf_counter() - execute_started) * 1000
+            assistant_resp.meta["execution_pending"] = True
+            logger.info(
+                "interact execution deferred inline_wait_s=%.2f",
+                settings.executor_inline_wait_seconds,
+            )
+    logger.info(
+        "interact timing parse_ms=%.1f execute_ms=%.1f total_ms=%.1f route=%s has_command=%s",
+        parse_ms,
+        execute_ms,
+        (time.perf_counter() - request_started) * 1000,
+        assistant_resp.route,
+        bool(assistant_resp.command),
+    )
         
     return InteractResponse(
         assistant_response=assistant_resp,
@@ -80,6 +127,7 @@ async def transcribe_audio(
     request: Request,
     _: None = Depends(verify_dev_api_key),
 ):
+    started = time.perf_counter()
     audio_bytes = await request.body()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio payload.")
@@ -91,7 +139,9 @@ async def transcribe_audio(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    return {"text": text}
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info("transcribe timing total_ms=%.1f bytes=%d chars=%d", elapsed_ms, len(audio_bytes), len(text))
+    return {"text": text, "meta": {"timing_ms": round(elapsed_ms, 2)}}
 
 
 class TtsRequest(BaseModel):

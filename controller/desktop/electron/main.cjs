@@ -8,6 +8,11 @@ const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const cursorProjectsDir = path.join(os.homedir(), ".cursor", "projects");
 const projectName = path.basename(repoRoot);
 const maxLogLines = 300;
+/** @type {BrowserWindow | null} */
+let mainWindow = null;
+
+// Some Windows machines intermittently show a black renderer with GPU acceleration.
+app.disableHardwareAcceleration();
 
 function sanitizePathSegment(value) {
   return String(value)
@@ -315,9 +320,10 @@ async function callInteract(text, baseUrl, chatProvider) {
   return response.json();
 }
 
-async function callTranscribe(wavBytesBase64, baseUrl) {
+async function callTranscribe(wavBytes, baseUrl) {
   const url = `${baseUrl.replace(/\/+$/, "")}/api/transcribe`;
-  const wavBuffer = Buffer.from(wavBytesBase64, "base64");
+  const wavBuffer = Buffer.isBuffer(wavBytes) ? wavBytes : Buffer.from(wavBytes);
+  const startedAt = Date.now();
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -332,6 +338,7 @@ async function callTranscribe(wavBytesBase64, baseUrl) {
     throw new Error(`Transcription failed ${response.status}: ${responseText || response.statusText}`);
   }
 
+  appendLog("backend", `[perf] transcribe_roundtrip_ms=${Date.now() - startedAt} payload_bytes=${wavBuffer.length}`);
   return response.json();
 }
 
@@ -401,21 +408,43 @@ function createWindow() {
     },
   });
 
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+    // Dev server can race during startup; retry once after a short delay.
+    if (!app.isPackaged && validatedUrl.includes("127.0.0.1:5173")) {
+      console.warn(
+        `[electron] did-fail-load code=${errorCode} reason=${errorDescription}. Retrying load...`
+      );
+      setTimeout(() => {
+        if (!win.isDestroyed()) {
+          win.loadURL("http://127.0.0.1:5173");
+        }
+      }, 900);
+    }
+  });
+
   if (!app.isPackaged) {
     win.loadURL("http://127.0.0.1:5173");
-    return;
+  } else {
+    win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
 
-  win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
 }
 
 app.whenReady().then(() => {
   createWindow();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
       createWindow();
+      return;
     }
+    mainWindow.focus();
   });
 });
 
@@ -457,9 +486,9 @@ ipcMain.handle("backend:interact", async (_event, text, baseUrl, chatProvider) =
     return { ok: false, error: message };
   }
 });
-ipcMain.handle("backend:transcribe", async (_event, wavBytesBase64, baseUrl) => {
+ipcMain.handle("backend:transcribe", async (_event, wavBytes, baseUrl) => {
   try {
-    const data = await callTranscribe(wavBytesBase64, baseUrl);
+    const data = await callTranscribe(wavBytes, baseUrl);
     return { ok: true, data };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown transcription error";

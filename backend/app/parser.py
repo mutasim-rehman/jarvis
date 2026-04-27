@@ -1,7 +1,9 @@
 import json
+import logging
 import re
 import sys
 import os
+import time
 from typing import Any
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -22,6 +24,7 @@ SUPPORTED_INTENTS_TEXT = "\n".join(
 )
 
 BASE_SYSTEM_PROMPT = build_base_system_message()
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = f"""
@@ -212,8 +215,17 @@ def _quick_conversational_response(user_text: str) -> str | None:
     if not t:
         return None
 
+    normalized = re.sub(r"[^a-z0-9\s]", " ", t)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    words = normalized.split()
+    greeting_words = {"hello", "hi", "hey", "yo", "sup"}
     # Fast conversational wake/greeting path: avoids unnecessary LLM latency.
     if re.fullmatch(r"(wake\s*up|wake up jarvis|jarvis|hey jarvis|hello|hi|good (morning|afternoon|evening))", t):
+        return "At your service, Sir. How may I assist you today?"
+    if len(words) <= 5 and any(word in greeting_words for word in words):
+        if "jarvis" in words or (len(words) == 1 and words[0] in greeting_words):
+            return "At your service, Sir. How may I assist you today?"
+    if normalized in {"good morning jarvis", "good afternoon jarvis", "good evening jarvis"}:
         return "At your service, Sir. How may I assist you today?"
     return None
 
@@ -259,6 +271,7 @@ def _wrap(message: str, command: ActionCommand | None, meta: dict[str, Any] | No
 
 
 async def parse_intent(text: str, chat_provider: str | None = None) -> AssistantResponse:
+    started = time.perf_counter()
     quick = _quick_conversational_response(text)
     if quick:
         return _wrap(quick, None)
@@ -282,10 +295,12 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
     base_message = ""
     content = ""
     try:
+        llm_started = time.perf_counter()
         if chat_provider:
             response = await generate_chat(messages=messages, preferred_provider=chat_provider)
         else:
             response = await generate_chat(messages=messages)
+        logger.debug("parse_intent llm_ms=%.1f provider=%s", (time.perf_counter() - llm_started) * 1000, chat_provider or "default")
         content = response.get("message", {}).get("content", "").strip()
         base_message = _extract_conversational_message(content) if content else ""
     except ProviderUnavailableError as exc:
@@ -374,4 +389,11 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
         cmd = _build_command(fb_intent, fb_target)
         return _wrap(base_message or content or "On it.", cmd)
 
-    return _wrap(base_message or content, None)
+    result = _wrap(base_message or content, None)
+    logger.debug(
+        "parse_intent total_ms=%.1f route=%s has_command=%s",
+        (time.perf_counter() - started) * 1000,
+        result.route,
+        bool(result.command),
+    )
+    return result

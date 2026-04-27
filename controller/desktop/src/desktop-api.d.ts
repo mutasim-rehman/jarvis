@@ -62,7 +62,7 @@ interface DesktopApi {
     chatProvider?: "huggingface" | "ollama",
   ) => Promise<{ ok: true; data: unknown } | { ok: false; error: string }>;
   transcribeAudio: (
-    wavBytesBase64: string,
+    wavBytes: Uint8Array,
     baseUrl: string,
   ) => Promise<{ ok: true; data: { text?: string } } | { ok: false; error: string }>;
   synthesizeSpeech: (

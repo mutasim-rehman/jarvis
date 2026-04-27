@@ -5,6 +5,8 @@ import httpx
 from ..config import settings
 from ..types import ProviderUnavailableError
 
+_ollama_client = httpx.AsyncClient(timeout=settings.timeout_seconds)
+
 
 async def generate_chat_ollama(messages: list[dict[str, Any]], format: Any = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
@@ -17,9 +19,8 @@ async def generate_chat_ollama(messages: list[dict[str, Any]], format: Any = Non
         payload["format"] = format
 
     try:
-        async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
-            response = await client.post(f"{settings.ollama_base_url}/api/chat", json=payload)
-            response.raise_for_status()
-            return response.json()
+        response = await _ollama_client.post(f"{settings.ollama_base_url}/api/chat", json=payload)
+        response.raise_for_status()
+        return response.json()
     except httpx.HTTPError as exc:
         raise ProviderUnavailableError(provider="ollama", reason=str(exc)) from exc

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "npm run dev:desktop",
     "dev:ui": "npx vite",
-    "dev:electron": "wait-on tcp:5173 && npx electron .",
+    "dev:electron": "wait-on http-get://127.0.0.1:5173 && npx electron .",
     "dev:desktop": "concurrently -k \"npm run dev:ui\" \"npm run dev:electron\"",
     "electron": "npx electron .",
     "build": "tsc -b && npx vite build",

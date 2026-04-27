@@ -62,10 +62,20 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   const PX = -3.4; // Default horizontal position
   const PX_SPEAK_HIDDEN = 0.0; // Center position when speak mode is active and conversation is hidden
   const PX_SMOOTHING = 0.08;
+  const BASE_SPEED_MULTIPLIER = 3.3;
   let currentPx = PX;
   let targetPx = PX;
   let speakingActive = false;
   let speakingBoost = 0;
+  const speakingSpeedProfile = {
+    // Per-component speaking speed levels (min 4, max 10).
+    core: 5,
+    rings: 10,
+    ladders: 7,
+    sparks: 6,
+    spokes: 4,
+    pulse: 7,
+  };
 
   let _s = 42;
   function srnd() { _s ^= _s << 13; _s ^= _s >> 7; _s ^= _s << 17; return (_s >>> 0) / 4294967296; }
@@ -288,8 +298,8 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   mainGroup.add(ringGrp);
   const ringMotions = ringGrp.children.map((_, index) => ({
     phase: sr(index * 0.3, index * 0.3 + TAU),
-    horizonSpan: 0.18 + index * 0.04,
-    wobbleStrength: 0.35 + (index % 3) * 0.25,
+    speedFactor: 0.78 + index * 0.09,
+    crossFactor: 0.62 + (index % 3) * 0.12,
   }));
 
   const spokeGrp = new THREE.Group();
@@ -358,18 +368,16 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   function animate() {
     requestAnimationFrame(animate);
     const t = clock.getElapsedTime();
-    speakingBoost += ((speakingActive ? 1 : 0) - speakingBoost) * 0.08;
-    const beat = 0.5 + 0.5 * Math.sin(t * (4.2 + speakingBoost * 6.8));
-    const beat2 = 0.5 + 0.5 * Math.sin(t * (2.1 + speakingBoost * 3.6) + 1.5);
+    const beat = 0.5 + 0.5 * Math.sin(t * BASE_SPEED_MULTIPLIER * 4.2);
+    const beat2 = 0.5 + 0.5 * Math.sin(t * BASE_SPEED_MULTIPLIER * 2.1 + 1.5);
 
     currentPx += (targetPx - currentPx) * PX_SMOOTHING;
     applyLensShift();
 
     const pulseContainer = document.getElementById("pulse-container");
     if (pulseContainer) {
-      const speakingPulse = 1 + speakingBoost * (0.08 + 0.06 * Math.sin(t * 11.5));
-      pulseContainer.style.opacity = (0.55 + speakingBoost * 0.35).toFixed(3);
-      pulseContainer.style.transform = \`translateX(\${currentPx * 5}vw) scale(\${speakingPulse.toFixed(3)})\`;
+      pulseContainer.style.opacity = "0.55";
+      pulseContainer.style.transform = \`translateX(\${currentPx * 5}vw) scale(1.0)\`;
     }
 
     shells[0].scale.setScalar(1 + beat * 0.3); shells[1].scale.setScalar(1 + beat * 0.18);
@@ -378,46 +386,40 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
     shells[2].material.opacity = 0.02 + beat * 0.04; shells[3].material.opacity = 0.01 + beat2 * 0.02;
 
     coreRing.material.opacity = 0.15 + beat * 0.11;
-    coreRing.rotation.z += 0.012 + speakingBoost * 0.006; cr2.rotation.z += 0.007 + speakingBoost * 0.003;
-    coreGrp.scale.setScalar(1 + speakingBoost * (0.06 + 0.03 * Math.sin(t * 8.2)));
-    mainGroup.rotation.z = speakingBoost * 0.012 * Math.sin(t * 5.5);
+    coreRing.rotation.z += BASE_SPEED_MULTIPLIER * 0.012;
+    cr2.rotation.z += BASE_SPEED_MULTIPLIER * 0.007;
+    coreGrp.scale.setScalar(1);
+    mainGroup.rotation.z = 0;
 
     const rc = ringGrp.children;
     rc.forEach((ring, index) => {
       const dir = index % 2 === 0 ? 1 : -1;
       const motion = ringMotions[index];
-      const randomA = fbm(t * (1.2 + index * 0.23) + motion.phase, 3);
-      const randomB = fbm(t * (0.9 + index * 0.19) + motion.phase + 21, 3);
-      const spinBase = 0.001 + index * 0.00018;
-      const spinBoost = speakingBoost * (0.0032 + index * 0.00035);
-      const randomSpin = speakingBoost * 0.0009 * randomA;
+      const spinBase = BASE_SPEED_MULTIPLIER * (0.001 + index * 0.00018);
 
-      // Opposite-direction ring spin with random wobble while speaking.
-      ring.rotation.z += dir * (spinBase + spinBoost + randomSpin);
-      ring.rotation.y += -dir * (spinBase * 0.72 + spinBoost * 0.56) + speakingBoost * 0.0007 * randomB;
-      ring.rotation.x += speakingBoost * 0.0014 * motion.wobbleStrength * randomA;
-
-      // Opposite horizontal drift ("opposite horizon") that fades in/out smoothly.
-      const driftXTarget = dir * speakingBoost * motion.horizonSpan * Math.sin(t * (1.8 + index * 0.17) + motion.phase);
-      const driftYTarget = speakingBoost * 0.07 * motion.wobbleStrength * Math.cos(t * (1.4 + index * 0.13) + motion.phase);
-      ring.position.x += (driftXTarget - ring.position.x) * 0.09;
-      ring.position.y += (driftYTarget - ring.position.y) * 0.09;
+      ring.rotation.z += dir * spinBase;
+      ring.rotation.y += -dir * (spinBase * 0.72);
+      ring.rotation.x += 0.00001 * Math.sin(t * BASE_SPEED_MULTIPLIER * (1.6 + index * 0.12) + motion.phase);
+      ring.position.x += (0 - ring.position.x) * 0.1;
+      ring.position.y += (0 - ring.position.y) * 0.1;
     });
 
     ladders.forEach(({ mesh, speed, dir, axis }) => {
-      mesh.rotation[axis] += speed * dir;
-      mesh.rotation[axis === "y" ? "z" : "y"] += speed * 0.25 * dir;
+      const speakingMultiplier = speakingActive ? speakingSpeedProfile.ladders : 1;
+      const ladderStep = speed * BASE_SPEED_MULTIPLIER * speakingMultiplier;
+      mesh.rotation[axis] += ladderStep * dir;
+      mesh.rotation[axis === "y" ? "z" : "y"] += ladderStep * 0.25 * dir;
     });
 
-    renderer.toneMappingExposure = 1.02 + beat * 0.18 + speakingBoost * 0.1;
+    renderer.toneMappingExposure = 1.02 + beat * 0.18;
 
     sparkSystems.forEach((s, i) => {
-      s.rotation.y += 0.0008 * (i % 2 ? 1 : -1);
-      s.rotation.x += 0.0004 * (i % 3 ? 1 : -1);
-      s.material.opacity = (i < 3 ? 0.42 : 0.2) + Math.sin(t * 2 + i) * 0.09;
+      s.rotation.y += 0.0008 * BASE_SPEED_MULTIPLIER * (i % 2 ? 1 : -1);
+      s.rotation.x += 0.0004 * BASE_SPEED_MULTIPLIER * (i % 3 ? 1 : -1);
+      s.material.opacity = (i < 3 ? 0.42 : 0.2) + Math.sin(t * BASE_SPEED_MULTIPLIER * 2 + i) * 0.09;
     });
 
-    spokeGrp.rotation.y += 0.001;
+    spokeGrp.rotation.y += BASE_SPEED_MULTIPLIER * 0.001;
     controls.update();
     composer.render();
   }

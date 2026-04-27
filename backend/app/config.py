@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     executor_base_url: str = "http://127.0.0.1:8001"
     executor_api_key: str = ""
     executor_timeout_seconds: float = 120.0
+    executor_inline_wait_seconds: float = 1.2
 
     # Local offline speech-to-text (Vosk)
     stt_model_path: str = "backend/models/vosk-model-small-en-us-0.15"

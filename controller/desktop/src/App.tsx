@@ -43,9 +43,28 @@ type LocalMicState = {
   sink: GainNode;
   chunks: Float32Array[];
   sampleCount: number;
-  rmsSum: number;
-  rmsFrames: number;
+  preRollChunks: Float32Array[];
+  preRollSampleCount: number;
+  speaking: boolean;
+  speechSampleCount: number;
+  silenceSampleCount: number;
+  cooldownUntilMs: number;
 };
+
+type PendingSegment = {
+  audio: Float32Array;
+  inputSampleRate: number;
+};
+
+const MIC_SEGMENT_MIN_SECONDS = 0.35;
+const MIC_SEGMENT_MAX_SECONDS = 6.0;
+const MIC_PRE_ROLL_SECONDS = 0.35;
+const MIC_SILENCE_TAIL_SECONDS = 0.65;
+const MIC_TRIGGER_RMS = 0.012;
+const MIC_SUSTAIN_RMS = 0.0075;
+const MIC_SEND_COOLDOWN_MS = 260;
+const MIC_DUPLICATE_WINDOW_MS = 4500;
+const PREFER_LOCAL_MIC = true;
 
 function defaultHealthMap() {
   return {
@@ -140,7 +159,7 @@ function downsampleTo16BitPcm(
   return pcm;
 }
 
-function wavBase64FromPcm16(pcm: Int16Array, sampleRate: number): string {
+function wavBytesFromPcm16(pcm: Int16Array, sampleRate: number): Uint8Array {
   const buffer = new ArrayBuffer(44 + pcm.length * 2);
   const view = new DataView(buffer);
   const writeText = (offset: number, value: string) => {
@@ -169,14 +188,7 @@ function wavBase64FromPcm16(pcm: Int16Array, sampleRate: number): string {
     offset += 2;
   }
 
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return window.btoa(binary);
+  return new Uint8Array(buffer);
 }
 
 export default function App() {
@@ -195,11 +207,15 @@ export default function App() {
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const micOnRef = useRef(false);
   const micNetworkIssueNotifiedRef = useRef(false);
-  const useLocalMicRef = useRef(false);
+  const useLocalMicRef = useRef(PREFER_LOCAL_MIC);
   const localMicStateRef = useRef<LocalMicState | null>(null);
   const localMicInitializingRef = useRef(false);
   const localTranscribeBusyRef = useRef(false);
+  const pendingLocalSegmentRef = useRef<PendingSegment | null>(null);
+  const lastTranscriptRef = useRef("");
+  const lastTranscriptAtRef = useRef(0);
   const micSuppressUntilRef = useRef(0);
+  const perfEnabledRef = useRef(true);
 
   const servicesById = useMemo(
     () => services.reduce<Record<string, ServiceStatus>>((acc, service) => {
@@ -262,6 +278,12 @@ export default function App() {
         text: payload,
       },
     ]);
+  }, []);
+
+  const logPerf = useCallback((label: string, metrics: Record<string, number | string | boolean>) => {
+    if (!perfEnabledRef.current) return;
+    const payload = Object.entries(metrics).map(([key, value]) => `${key}=${value}`).join(" ");
+    console.debug(`[perf] ${label} ${payload}`);
   }, []);
 
   useEffect(() => {
@@ -330,6 +352,7 @@ export default function App() {
   ) {
     const text = raw.trim();
     if (!text) return;
+    const requestStart = performance.now();
     if (!suppressUserMessage) {
       addMessage("user", text);
     }
@@ -360,6 +383,10 @@ export default function App() {
       if (speakModeOn) {
         speakAssistant(reply);
       }
+      logPerf("chat.interact", {
+        provider,
+        totalMs: (performance.now() - requestStart).toFixed(1),
+      });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Unknown request error";
       addMessage("system", message);
@@ -367,7 +394,7 @@ export default function App() {
       setChatLoading(false);
       await refreshHealth();
     }
-  }, [activeProvider, addMessage, refreshHealth, speakAssistant, speakModeOn]);
+  }, [activeProvider, addMessage, logPerf, refreshHealth, speakAssistant, speakModeOn]);
 
   const stopMicRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -392,6 +419,7 @@ export default function App() {
 
   const transcribeLocalSegment = useCallback(async (audio: Float32Array, inputSampleRate: number) => {
     if (localTranscribeBusyRef.current) {
+      pendingLocalSegmentRef.current = { audio, inputSampleRate };
       return;
     }
     if (isMicSuppressed()) {
@@ -404,23 +432,46 @@ export default function App() {
 
     localTranscribeBusyRef.current = true;
     try {
-      const wavBase64 = wavBase64FromPcm16(pcm, 16000);
-      const response = await window.desktopApi.transcribeAudio(wavBase64, backendBaseUrl);
+      const encodeStart = performance.now();
+      const wavBytes = wavBytesFromPcm16(pcm, 16000);
+      const encodedMs = performance.now() - encodeStart;
+      const transcribeStart = performance.now();
+      const response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
+      const transcribeMs = performance.now() - transcribeStart;
       if ("error" in response) {
         addMessage("system", `Transcription error: ${response.error}`);
         return;
       }
       const transcript = (response.data.text ?? "").trim();
-      if (transcript && !isMicSuppressed()) {
-        void sendText(transcript);
+      if (!transcript || isMicSuppressed()) {
+        return;
       }
+      const now = Date.now();
+      const normalized = transcript.toLowerCase();
+      if (lastTranscriptRef.current === normalized && now - lastTranscriptAtRef.current < MIC_DUPLICATE_WINDOW_MS) {
+        return;
+      }
+      lastTranscriptRef.current = normalized;
+      lastTranscriptAtRef.current = now;
+      logPerf("mic.local_segment", {
+        pcmSamples: pcm.length,
+        wavBytes: wavBytes.length,
+        encodedMs: encodedMs.toFixed(1),
+        transcribeMs: transcribeMs.toFixed(1),
+      });
+      void sendText(transcript);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown transcription failure";
       addMessage("system", `Transcription error: ${message}`);
     } finally {
       localTranscribeBusyRef.current = false;
+      const pending = pendingLocalSegmentRef.current;
+      pendingLocalSegmentRef.current = null;
+      if (pending && micOnRef.current && !isMicSuppressed()) {
+        void transcribeLocalSegment(pending.audio, pending.inputSampleRate);
+      }
     }
-  }, [addMessage, isMicSuppressed, sendText]);
+  }, [addMessage, isMicSuppressed, logPerf, sendText]);
 
   const startLocalMicCapture = useCallback(async () => {
     if (localMicStateRef.current || localMicInitializingRef.current) return;
@@ -450,8 +501,12 @@ export default function App() {
         sink,
         chunks: [],
         sampleCount: 0,
-        rmsSum: 0,
-        rmsFrames: 0,
+        preRollChunks: [],
+        preRollSampleCount: 0,
+        speaking: false,
+        speechSampleCount: 0,
+        silenceSampleCount: 0,
+        cooldownUntilMs: 0,
       };
 
       processor.onaudioprocess = (event) => {
@@ -459,34 +514,70 @@ export default function App() {
         if (isMicSuppressed()) {
           state.chunks = [];
           state.sampleCount = 0;
-          state.rmsSum = 0;
-          state.rmsFrames = 0;
+          state.preRollChunks = [];
+          state.preRollSampleCount = 0;
+          state.speaking = false;
+          state.speechSampleCount = 0;
+          state.silenceSampleCount = 0;
+          state.cooldownUntilMs = Math.max(state.cooldownUntilMs, Date.now() + MIC_SEND_COOLDOWN_MS);
           return;
         }
         const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
-        state.chunks.push(chunk);
-        state.sampleCount += chunk.length;
-
         let energy = 0;
         for (let i = 0; i < chunk.length; i += 1) {
           energy += chunk[i] * chunk[i];
         }
         const rms = Math.sqrt(energy / chunk.length);
-        state.rmsSum += rms;
-        state.rmsFrames += 1;
+
+        const nowMs = Date.now();
+        const preRollMaxSamples = Math.floor(state.context.sampleRate * MIC_PRE_ROLL_SECONDS);
+        state.preRollChunks.push(chunk);
+        state.preRollSampleCount += chunk.length;
+        while (state.preRollSampleCount > preRollMaxSamples && state.preRollChunks.length > 1) {
+          const removed = state.preRollChunks.shift();
+          if (!removed) break;
+          state.preRollSampleCount -= removed.length;
+        }
+
+        const isVoice = rms >= MIC_TRIGGER_RMS || (state.speaking && rms >= MIC_SUSTAIN_RMS);
+        if (!state.speaking) {
+          if (!isVoice || nowMs < state.cooldownUntilMs) {
+            return;
+          }
+          state.speaking = true;
+          state.chunks = [...state.preRollChunks];
+          state.sampleCount = state.preRollSampleCount;
+          state.speechSampleCount = chunk.length;
+          state.silenceSampleCount = 0;
+        } else {
+          state.chunks.push(chunk);
+          state.sampleCount += chunk.length;
+          if (isVoice) {
+            state.speechSampleCount += chunk.length;
+            state.silenceSampleCount = 0;
+          } else {
+            state.silenceSampleCount += chunk.length;
+          }
+        }
 
         const segmentSeconds = state.sampleCount / state.context.sampleRate;
-        if (segmentSeconds < 3.0) return;
-
-        const avgRms = state.rmsFrames ? state.rmsSum / state.rmsFrames : 0;
-        const merged = mergeFloat32Chunks(state.chunks, state.sampleCount);
-        state.chunks = [];
-        state.sampleCount = 0;
-        state.rmsSum = 0;
-        state.rmsFrames = 0;
-
-        if (avgRms > 0.011) {
-          void transcribeLocalSegment(merged, state.context.sampleRate);
+        const speechSeconds = state.speechSampleCount / state.context.sampleRate;
+        const silenceSeconds = state.silenceSampleCount / state.context.sampleRate;
+        const shouldEmit = segmentSeconds >= MIC_SEGMENT_MAX_SECONDS
+          || (speechSeconds >= MIC_SEGMENT_MIN_SECONDS && silenceSeconds >= MIC_SILENCE_TAIL_SECONDS);
+        if (shouldEmit) {
+          const merged = mergeFloat32Chunks(state.chunks, state.sampleCount);
+          state.chunks = [];
+          state.sampleCount = 0;
+          state.preRollChunks = [];
+          state.preRollSampleCount = 0;
+          state.speaking = false;
+          state.speechSampleCount = 0;
+          state.silenceSampleCount = 0;
+          state.cooldownUntilMs = nowMs + MIC_SEND_COOLDOWN_MS;
+          if (speechSeconds >= MIC_SEGMENT_MIN_SECONDS) {
+            void transcribeLocalSegment(merged, state.context.sampleRate);
+          }
         }
       };
 
@@ -495,7 +586,7 @@ export default function App() {
       sink.connect(context.destination);
       localMicStateRef.current = state;
       localMicInitializingRef.current = false;
-      if (!micNetworkIssueNotifiedRef.current) {
+      if (!micNetworkIssueNotifiedRef.current && !PREFER_LOCAL_MIC) {
         addMessage("system", "Mic switched to local transcription mode.");
         micNetworkIssueNotifiedRef.current = true;
       }
