@@ -1,6 +1,7 @@
 import sys
 import os
 import base64
+import json
 import logging
 import time
 import asyncio
@@ -8,6 +9,7 @@ import asyncio
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from shared.schema import InteractResponse, ParseRequest, ParseResponse, RouteKind, SCHEMA_VERSION
@@ -15,7 +17,7 @@ from .config import settings
 from .parser import parse_intent
 from .executor_client import executor_client
 from .stt import transcribe_wav_bytes, warmup_model
-from .tts import synthesize_kokoro_wav
+from .tts import iter_tts_wav_chunks, synthesize_tts_wav, warmup_tts
 
 app = FastAPI(
     title="JARVIS Backend API",
@@ -39,6 +41,10 @@ async def on_startup() -> None:
         warmup_model()
     except Exception as exc:  # pragma: no cover - warmup depends on local model availability
         logger.warning("stt warmup skipped: %s", exc)
+    try:
+        warmup_tts()
+    except Exception as exc:  # pragma: no cover - warmup depends on local model availability
+        logger.warning("tts warmup skipped: %s", exc)
 
 
 async def verify_dev_api_key(
@@ -155,8 +161,9 @@ async def synthesize_tts(
     request: TtsRequest,
     _: None = Depends(verify_dev_api_key),
 ):
+    started = time.perf_counter()
     try:
-        wav_bytes, sample_rate = synthesize_kokoro_wav(
+        wav_bytes, sample_rate = synthesize_tts_wav(
             text=request.text,
             voice=request.voice,
             speed=request.speed,
@@ -166,9 +173,84 @@ async def synthesize_tts(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    selected_voice = request.voice
+    if not selected_voice and settings.tts_provider.lower() == "kokoro":
+        selected_voice = settings.tts_kokoro_voice
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    logger.info(
+        "tts timing provider=%s total_ms=%.1f chars=%d sample_rate=%d",
+        settings.tts_provider,
+        elapsed_ms,
+        len(request.text),
+        sample_rate,
+    )
     return {
         "audio_base64": base64.b64encode(wav_bytes).decode("ascii"),
         "sample_rate": sample_rate,
         "format": "wav",
-        "voice": request.voice or settings.tts_kokoro_voice,
+        "voice": selected_voice,
+        "provider": settings.tts_provider,
+        "meta": {"timing_ms": round(elapsed_ms, 2)},
     }
+
+
+@app.post("/api/tts/stream")
+async def synthesize_tts_stream(
+    request: TtsRequest,
+    _: None = Depends(verify_dev_api_key),
+):
+    if not settings.voice_streaming_enabled:
+        raise HTTPException(status_code=404, detail="Streaming TTS is disabled.")
+
+    def _generate() -> bytes:
+        started = time.perf_counter()
+        first_chunk_ms: float | None = None
+        chunk_count = 0
+        sample_rate = 0
+        for wav_bytes, current_sample_rate in iter_tts_wav_chunks(
+            text=request.text,
+            voice=request.voice,
+            speed=request.speed,
+        ):
+            chunk_count += 1
+            sample_rate = current_sample_rate
+            if first_chunk_ms is None:
+                first_chunk_ms = (time.perf_counter() - started) * 1000
+            payload = {
+                "type": "audio_chunk",
+                "index": chunk_count - 1,
+                "sample_rate": current_sample_rate,
+                "format": "wav",
+                "audio_base64": base64.b64encode(wav_bytes).decode("ascii"),
+            }
+            yield (json.dumps(payload) + "\n").encode("utf-8")
+
+        total_ms = (time.perf_counter() - started) * 1000
+        logger.info(
+            "tts_stream timing provider=%s first_chunk_ms=%.1f total_ms=%.1f chunks=%d chars=%d sample_rate=%d",
+            settings.tts_provider,
+            first_chunk_ms or total_ms,
+            total_ms,
+            chunk_count,
+            len(request.text),
+            sample_rate,
+        )
+        done = {
+            "type": "done",
+            "provider": settings.tts_provider,
+            "meta": {
+                "first_chunk_ms": round(first_chunk_ms or total_ms, 2),
+                "total_ms": round(total_ms, 2),
+                "chunks": chunk_count,
+                "sample_rate": sample_rate,
+            },
+        }
+        yield (json.dumps(done) + "\n").encode("utf-8")
+
+    try:
+        return StreamingResponse(_generate(), media_type="application/x-ndjson")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

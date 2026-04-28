@@ -339,8 +339,10 @@ def handle_get_assignments(task: Task, ctx: HandlerContext) -> TaskResult:
                 message="You have no pending assignments in Google Classroom. You're all caught up! 🎉",
             )
 
-        # 3. Format the list
-        lines = ["Here are your pending assignments:\n"]
+        # 3. Format the list with an explicit count first.
+        count = len(pending)
+        noun = "assignment" if count == 1 else "assignments"
+        lines = [f"You have {count} pending {noun} in Google Classroom.\n", "Here they are:\n"]
         for i, a in enumerate(pending, 1):
             lines.append(f"{i}. [{a['course']}] {a['title']}")
             lines.append(f"   Due: {a['due']}  |  Status: {a['state']}")
