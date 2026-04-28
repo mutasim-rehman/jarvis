@@ -201,6 +201,8 @@ export default function App() {
   const [micOn, setMicOn] = useState(false);
   const [speakModeOn, setSpeakModeOn] = useState(false);
   const [assistantSpeaking, setAssistantSpeaking] = useState(false);
+  const [localTranscribeBusy, setLocalTranscribeBusy] = useState(false);
+  const [voiceDetected, setVoiceDetected] = useState(false);
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminals, setTerminals] = useState<TerminalSnapshot[]>([]);
@@ -285,6 +287,20 @@ export default function App() {
     const payload = Object.entries(metrics).map(([key, value]) => `${key}=${value}`).join(" ");
     console.debug(`[perf] ${label} ${payload}`);
   }, []);
+
+  const voiceStatus = useMemo(() => {
+    if (assistantSpeaking) return "speaking";
+    if (chatLoading || localTranscribeBusy) return "processing";
+    if (micOn) return "listening";
+    return "idle";
+  }, [assistantSpeaking, chatLoading, localTranscribeBusy, micOn]);
+
+  const voiceStatusLabel = useMemo(() => {
+    if (voiceStatus === "speaking") return "Speaking...";
+    if (voiceStatus === "processing") return "Processing...";
+    if (voiceStatus === "listening") return voiceDetected ? "Listening (voice detected)" : "Listening...";
+    return "Not listening";
+  }, [voiceDetected, voiceStatus]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -431,6 +447,7 @@ export default function App() {
     }
 
     localTranscribeBusyRef.current = true;
+    setLocalTranscribeBusy(true);
     try {
       const encodeStart = performance.now();
       const wavBytes = wavBytesFromPcm16(pcm, 16000);
@@ -465,6 +482,7 @@ export default function App() {
       addMessage("system", `Transcription error: ${message}`);
     } finally {
       localTranscribeBusyRef.current = false;
+      setLocalTranscribeBusy(false);
       const pending = pendingLocalSegmentRef.current;
       pendingLocalSegmentRef.current = null;
       if (pending && micOnRef.current && !isMicSuppressed()) {
@@ -512,6 +530,7 @@ export default function App() {
       processor.onaudioprocess = (event) => {
         if (!micOnRef.current) return;
         if (isMicSuppressed()) {
+          setVoiceDetected(false);
           state.chunks = [];
           state.sampleCount = 0;
           state.preRollChunks = [];
@@ -540,6 +559,7 @@ export default function App() {
         }
 
         const isVoice = rms >= MIC_TRIGGER_RMS || (state.speaking && rms >= MIC_SUSTAIN_RMS);
+        setVoiceDetected((prev) => (prev === isVoice ? prev : isVoice));
         if (!state.speaking) {
           if (!isVoice || nowMs < state.cooldownUntilMs) {
             return;
@@ -572,6 +592,7 @@ export default function App() {
           state.preRollChunks = [];
           state.preRollSampleCount = 0;
           state.speaking = false;
+          setVoiceDetected(false);
           state.speechSampleCount = 0;
           state.silenceSampleCount = 0;
           state.cooldownUntilMs = nowMs + MIC_SEND_COOLDOWN_MS;
@@ -692,6 +713,7 @@ export default function App() {
     micOnRef.current = micOn;
     if (!micOn) {
       micNetworkIssueNotifiedRef.current = false;
+      setVoiceDetected(false);
     }
   }, [micOn]);
 
@@ -857,17 +879,30 @@ export default function App() {
       </section>
 
       {speakModeOn ? (
-        <button
-          type="button"
-          className="speak-floating"
-          onClick={() => {
-            setSpeakModeOn(false);
-            window.speechSynthesis.cancel();
-            setAssistantSpeaking(false);
-          }}
-        >
-          Speak Off
-        </button>
+        <div className="speak-floating-controls">
+          <span className={`voice-indicator ${voiceStatus}`}>
+            {voiceStatusLabel}
+          </span>
+          <button
+            type="button"
+            className={micOn ? "active" : ""}
+            onClick={() => setMicOn((value) => !value)}
+          >
+            {micOn ? "Mic On" : "Mic Off"}
+          </button>
+          <button
+            type="button"
+            className="speak-floating"
+            onClick={() => {
+              setSpeakModeOn(false);
+              window.speechSynthesis.cancel();
+              setAssistantSpeaking(false);
+              setVoiceDetected(false);
+            }}
+          >
+            Speak Off
+          </button>
+        </div>
       ) : null}
     </main>
   );

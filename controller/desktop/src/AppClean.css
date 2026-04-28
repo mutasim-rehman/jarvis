@@ -366,14 +366,51 @@ input:focus {
 }
 
 .speak-floating {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 40;
   background: rgba(255, 111, 15, 0.9);
   border-color: #ff9140;
   color: #fff;
   backdrop-filter: blur(8px);
+}
+
+.speak-floating-controls {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.voice-indicator {
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 170, 60, 0.32);
+  background: rgba(10, 14, 28, 0.72);
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  color: rgba(242, 246, 255, 0.92);
+}
+
+.voice-indicator.idle {
+  border-color: rgba(130, 140, 160, 0.35);
+  color: rgba(205, 214, 229, 0.82);
+}
+
+.voice-indicator.listening {
+  border-color: rgba(45, 190, 110, 0.55);
+  color: rgba(198, 255, 225, 0.94);
+}
+
+.voice-indicator.processing {
+  border-color: rgba(255, 186, 70, 0.52);
+  color: rgba(255, 231, 173, 0.95);
+}
+
+.voice-indicator.speaking {
+  border-color: rgba(100, 170, 255, 0.58);
+  color: rgba(208, 230, 255, 0.96);
 }
 
 /* ─── RESPONSIVE — narrow screens stack vertically ───────────── */
