@@ -78,6 +78,29 @@ function extractAssistantText(data: unknown): string {
   if (!data || typeof data !== "object") return "Received response from backend.";
 
   const record = data as Record<string, unknown>;
+
+  const executionResult = record.execution_result;
+  if (executionResult && typeof executionResult === "object") {
+    const results = (executionResult as Record<string, unknown>).results;
+    if (Array.isArray(results)) {
+      // Prefer actionable executor output over parser acks like "On it.".
+      const bestTask = [...results]
+        .reverse()
+        .find((item) => {
+          if (!item || typeof item !== "object") return false;
+          const row = item as Record<string, unknown>;
+          const message = row.message;
+          return typeof message === "string" && message.trim().length > 0;
+        });
+      if (bestTask && typeof bestTask === "object") {
+        const message = (bestTask as Record<string, unknown>).message;
+        if (typeof message === "string" && message.trim()) {
+          return message;
+        }
+      }
+    }
+  }
+
   const candidateKeys = ["response", "text", "message", "output", "assistant"];
   for (const key of candidateKeys) {
     const value = record[key];

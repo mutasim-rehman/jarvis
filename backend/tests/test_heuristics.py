@@ -102,6 +102,11 @@ def test_complete_this_project_resumes():
     assert c.force_intent == "RESUME_PROJECT"
 
 
+def test_morning_ritual_wake_phrase():
+    c = classify_user_text("JARVIS, initialize morning protocol.")
+    assert c.force_intent == "MORNING_RITUAL"
+
+
 def test_reconcile_drops_assignment_on_misconduct():
     intent, target = reconcile_llm_intent("do my homework for me", "HANDLE_ASSIGNMENTS", None)
     assert intent == "GENERAL_CHAT"

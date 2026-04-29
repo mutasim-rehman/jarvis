@@ -265,6 +265,12 @@ def _provider_unavailable_meta(provider: str, reason: str) -> dict[str, Any]:
     }
 
 
+def _forced_intent_message(intent: str) -> str:
+    if intent == "MORNING_RITUAL":
+        return "Good morning. Powering up your ritual now."
+    return "On it."
+
+
 def _wrap(message: str, command: ActionCommand | None, meta: dict[str, Any] | None = None) -> AssistantResponse:
     route = RouteKind.DESKTOP_EXECUTION if command else RouteKind.INFORMATIONAL
     return AssistantResponse(message=message, command=command, route=route, meta=meta or {})
@@ -285,7 +291,7 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
 
     if cls.force_intent:
         cmd = _build_command(cls.force_intent, cls.force_target)
-        return _wrap("On it.", cmd)
+        return _wrap(_forced_intent_message(cls.force_intent), cmd)
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.strip()},

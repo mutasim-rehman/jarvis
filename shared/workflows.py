@@ -41,6 +41,7 @@ class IntentType(str, Enum):
     FETCH_TECH_NEWS = "FETCH_TECH_NEWS"
     FETCH_WORLD_NEWS = "FETCH_WORLD_NEWS"
     WATCH_VIDEO = "WATCH_VIDEO"
+    MORNING_RITUAL = "MORNING_RITUAL"
     UNKNOWN = "UNKNOWN"
 
 
@@ -65,6 +66,7 @@ WORKFLOW_DESCRIPTIONS: dict[str, str] = {
     "FETCH_TECH_NEWS": "Open latest tech news and summarize highlights.",
     "FETCH_WORLD_NEWS": "Open global headlines and summarize highlights.",
     "WATCH_VIDEO": "Search for and play a video on YouTube based on the user's query.",
+    "MORNING_RITUAL": "Run your startup routine: greeting, music, and quick tech intel briefing.",
 }
 
 
@@ -145,5 +147,8 @@ WORKFLOWS: dict[str, list[dict]] = {
     ],
     "WATCH_VIDEO": [
         {"action": "WATCH_VIDEO", "target": None},
+    ],
+    "MORNING_RITUAL": [
+        {"action": "MORNING_RITUAL", "target": None},
     ],
 }

@@ -89,6 +89,29 @@ _VIDEO_VERBS = (
     "videos of",
 )
 
+_MORNING_RITUAL_PHRASES = (
+    "power up",
+    "we re back online",
+    "were back online",
+    "bring the house to life",
+    "initialize morning protocol",
+    "let s build something",
+    "lets build something",
+    "status check",
+    "engage",
+    "wake up daddy s home",
+    "wake up daddy's home",
+    "wake up we ve got work",
+    "wake up we've got work",
+    "let s make something dangerous",
+    "lets make something dangerous",
+    "time to cook",
+    "start the engine",
+    "we re not wasting today",
+    "were not wasting today",
+    "wake up and earn your electricity",
+)
+
 
 def _requests_academic_misconduct(t: str) -> bool:
     """User asks the assistant to do graded work for them — no execution workflow."""
@@ -166,6 +189,16 @@ def _extract_ai_tool(t: str) -> str | None:
 
 def _has_assignment_signal(t: str) -> bool:
     return any(m in t for m in _ASSIGNMENT_MARKERS)
+
+
+def _morning_ritual_signal(raw_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\s]", " ", (raw_text or "").strip().lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if not normalized:
+        return False
+    if "jarvis" not in normalized:
+        return False
+    return any(phrase in normalized for phrase in _MORNING_RITUAL_PHRASES)
 
 
 def _music_play_signal(t: str) -> bool:
@@ -367,6 +400,9 @@ def classify_user_text(text: str) -> UserTextClassification:
 
     if _vague_do_something(t) and not _has_domain_signal(t):
         return UserTextClassification(suppress_structured_command=True)
+
+    if _morning_ritual_signal(text):
+        return UserTextClassification(force_intent="MORNING_RITUAL", force_target=None)
 
     if any(p in t for p in _MOOD_PHRASES):
         return UserTextClassification(force_intent="FOCUS_MODE", force_target=None)

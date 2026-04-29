@@ -9,6 +9,7 @@ from executor.app.handlers.apps import handle_open_app
 from executor.app.handlers.assignment import handle_do_assignment
 from executor.app.handlers.fs import handle_create_folder
 from executor.app.handlers.music import handle_play_music
+from executor.app.handlers.routine import handle_morning_ritual
 from executor.app.handlers.video import handle_watch_video
 from executor.app.handlers.web import handle_get_assignments, handle_get_highlights, handle_open_url
 
@@ -22,6 +23,7 @@ _HANDLERS = {
     "CREATE_FOLDER": handle_create_folder,
     "PLAY_MUSIC": handle_play_music,
     "WATCH_VIDEO": handle_watch_video,
+    "MORNING_RITUAL": handle_morning_ritual,
 }
 
 
