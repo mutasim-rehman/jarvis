@@ -57,14 +57,24 @@ type PendingSegment = {
 };
 
 const MIC_SEGMENT_MIN_SECONDS = 0.35;
-const MIC_SEGMENT_MAX_SECONDS = 6.0;
+const MIC_SEGMENT_MAX_SECONDS = 4.5;
 const MIC_PRE_ROLL_SECONDS = 0.35;
-const MIC_SILENCE_TAIL_SECONDS = 0.65;
+const MIC_SILENCE_TAIL_SECONDS = 0.45;
 const MIC_TRIGGER_RMS = 0.012;
 const MIC_SUSTAIN_RMS = 0.0075;
 const MIC_SEND_COOLDOWN_MS = 260;
 const MIC_DUPLICATE_WINDOW_MS = 4500;
 const PREFER_LOCAL_MIC = true;
+const WAKE_WORD_REGEX = /^(?:hey\s+|ok\s+)?jarvis[\s,.:!-]*/i;
+
+function sanitizeVoiceCommand(rawTranscript: string, requireWakeWord: boolean): string | null {
+  const cleaned = rawTranscript.trim().replace(/\s+/g, " ");
+  if (!cleaned) return null;
+  if (!requireWakeWord) return cleaned;
+  if (!WAKE_WORD_REGEX.test(cleaned)) return null;
+  const withoutWakeWord = cleaned.replace(WAKE_WORD_REGEX, "").trim();
+  return withoutWakeWord || null;
+}
 
 function defaultHealthMap() {
   return {
@@ -228,6 +238,7 @@ export default function App() {
   const [assistantSpeaking, setAssistantSpeaking] = useState(false);
   const [localTranscribeBusy, setLocalTranscribeBusy] = useState(false);
   const [voiceDetected, setVoiceDetected] = useState(false);
+  const [voiceLockEnabled, setVoiceLockEnabled] = useState(true);
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminals, setTerminals] = useState<TerminalSnapshot[]>([]);
@@ -238,7 +249,9 @@ export default function App() {
   const localMicStateRef = useRef<LocalMicState | null>(null);
   const localMicInitializingRef = useRef(false);
   const localTranscribeBusyRef = useRef(false);
-  const pendingLocalSegmentRef = useRef<PendingSegment | null>(null);
+  const pendingLocalSegmentsRef = useRef<PendingSegment[]>([]);
+  const voiceWorkerActiveRef = useRef(false);
+  const wakeHintShownAtRef = useRef(0);
   const lastTranscriptRef = useRef("");
   const lastTranscriptAtRef = useRef(0);
   const micSuppressUntilRef = useRef(0);
@@ -478,63 +491,76 @@ export default function App() {
     localMicInitializingRef.current = false;
   }, []);
 
-  const transcribeLocalSegment = useCallback(async (audio: Float32Array, inputSampleRate: number) => {
-    if (localTranscribeBusyRef.current) {
-      pendingLocalSegmentRef.current = { audio, inputSampleRate };
-      return;
-    }
-    if (isMicSuppressed()) {
-      return;
-    }
-    const pcm = downsampleTo16BitPcm(audio, inputSampleRate, 16000);
-    if (pcm.length < 8000) {
-      return;
-    }
-
+  const processVoiceQueue = useCallback(async () => {
+    if (voiceWorkerActiveRef.current) return;
+    voiceWorkerActiveRef.current = true;
     localTranscribeBusyRef.current = true;
     setLocalTranscribeBusy(true);
     try {
-      const encodeStart = performance.now();
-      const wavBytes = wavBytesFromPcm16(pcm, 16000);
-      const encodedMs = performance.now() - encodeStart;
-      const transcribeStart = performance.now();
-      const response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
-      const transcribeMs = performance.now() - transcribeStart;
-      if ("error" in response) {
-        addMessage("system", `Transcription error: ${response.error}`);
-        return;
+      while (pendingLocalSegmentsRef.current.length > 0 && micOnRef.current) {
+        const nextSegment = pendingLocalSegmentsRef.current.shift();
+        if (!nextSegment || isMicSuppressed()) {
+          continue;
+        }
+        const pcm = downsampleTo16BitPcm(nextSegment.audio, nextSegment.inputSampleRate, 16000);
+        if (pcm.length < 8000) {
+          continue;
+        }
+        const encodeStart = performance.now();
+        const wavBytes = wavBytesFromPcm16(pcm, 16000);
+        const encodedMs = performance.now() - encodeStart;
+        const transcribeStart = performance.now();
+        const response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
+        const transcribeMs = performance.now() - transcribeStart;
+        if ("error" in response) {
+          addMessage("system", `Transcription error: ${response.error}`);
+          continue;
+        }
+        const transcript = (response.data.text ?? "").trim();
+        if (!transcript || isMicSuppressed()) {
+          continue;
+        }
+        const commandText = sanitizeVoiceCommand(transcript, voiceLockEnabled);
+        if (!commandText) {
+          const now = Date.now();
+          if (voiceLockEnabled && now - wakeHintShownAtRef.current > 7000) {
+            wakeHintShownAtRef.current = now;
+            addMessage("system", "Voice lock is on. Start commands with 'Jarvis ...'.");
+          }
+          continue;
+        }
+        const now = Date.now();
+        const normalized = commandText.toLowerCase();
+        if (lastTranscriptRef.current === normalized && now - lastTranscriptAtRef.current < MIC_DUPLICATE_WINDOW_MS) {
+          continue;
+        }
+        lastTranscriptRef.current = normalized;
+        lastTranscriptAtRef.current = now;
+        logPerf("mic.local_segment", {
+          pcmSamples: pcm.length,
+          wavBytes: wavBytes.length,
+          encodedMs: encodedMs.toFixed(1),
+          transcribeMs: transcribeMs.toFixed(1),
+          queueDepth: pendingLocalSegmentsRef.current.length,
+          voiceLockEnabled,
+        });
+        void sendText(commandText);
       }
-      const transcript = (response.data.text ?? "").trim();
-      if (!transcript || isMicSuppressed()) {
-        return;
-      }
-      const now = Date.now();
-      const normalized = transcript.toLowerCase();
-      if (lastTranscriptRef.current === normalized && now - lastTranscriptAtRef.current < MIC_DUPLICATE_WINDOW_MS) {
-        return;
-      }
-      lastTranscriptRef.current = normalized;
-      lastTranscriptAtRef.current = now;
-      logPerf("mic.local_segment", {
-        pcmSamples: pcm.length,
-        wavBytes: wavBytes.length,
-        encodedMs: encodedMs.toFixed(1),
-        transcribeMs: transcribeMs.toFixed(1),
-      });
-      void sendText(transcript);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown transcription failure";
       addMessage("system", `Transcription error: ${message}`);
     } finally {
       localTranscribeBusyRef.current = false;
       setLocalTranscribeBusy(false);
-      const pending = pendingLocalSegmentRef.current;
-      pendingLocalSegmentRef.current = null;
-      if (pending && micOnRef.current && !isMicSuppressed()) {
-        void transcribeLocalSegment(pending.audio, pending.inputSampleRate);
-      }
+      voiceWorkerActiveRef.current = false;
     }
-  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText]);
+  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, voiceLockEnabled]);
+
+  const enqueueLocalSegment = useCallback((audio: Float32Array, inputSampleRate: number) => {
+    if (!micOnRef.current || isMicSuppressed()) return;
+    pendingLocalSegmentsRef.current.push({ audio, inputSampleRate });
+    void processVoiceQueue();
+  }, [isMicSuppressed, processVoiceQueue]);
 
   const startLocalMicCapture = useCallback(async () => {
     if (localMicStateRef.current || localMicInitializingRef.current) return;
@@ -642,7 +668,7 @@ export default function App() {
           state.silenceSampleCount = 0;
           state.cooldownUntilMs = nowMs + MIC_SEND_COOLDOWN_MS;
           if (speechSeconds >= MIC_SEGMENT_MIN_SECONDS) {
-            void transcribeLocalSegment(merged, state.context.sampleRate);
+            enqueueLocalSegment(merged, state.context.sampleRate);
           }
         }
       };
@@ -662,7 +688,7 @@ export default function App() {
       addMessage("system", `Mic access error: ${message}`);
       setMicOn(false);
     }
-  }, [addMessage, isMicSuppressed, transcribeLocalSegment]);
+  }, [addMessage, enqueueLocalSegment, isMicSuppressed]);
 
   const startMicRecognition = useCallback(() => {
     if (recognitionRef.current) return;
@@ -702,7 +728,10 @@ export default function App() {
         if (result.isFinal) {
           const transcript = result[0]?.transcript?.trim() ?? "";
           if (transcript && !isMicSuppressed()) {
-            void sendText(transcript);
+            const commandText = sanitizeVoiceCommand(transcript, voiceLockEnabled);
+            if (commandText) {
+              void sendText(commandText);
+            }
           }
         }
       }
@@ -752,13 +781,17 @@ export default function App() {
     };
     recognition.start();
     recognitionRef.current = recognition;
-  }, [addMessage, isMicSuppressed, sendText, startLocalMicCapture]);
+  }, [addMessage, isMicSuppressed, sendText, startLocalMicCapture, voiceLockEnabled]);
 
   useEffect(() => {
     micOnRef.current = micOn;
     if (!micOn) {
       micNetworkIssueNotifiedRef.current = false;
       setVoiceDetected(false);
+      pendingLocalSegmentsRef.current = [];
+      voiceWorkerActiveRef.current = false;
+      localTranscribeBusyRef.current = false;
+      setLocalTranscribeBusy(false);
     }
   }, [micOn]);
 
@@ -906,6 +939,13 @@ export default function App() {
             </button>
             <button type="button" className={micOn ? "active" : ""} onClick={() => setMicOn((value) => !value)}>
               {micOn ? "Mic On" : "Mic"}
+            </button>
+            <button
+              type="button"
+              className={voiceLockEnabled ? "active" : ""}
+              onClick={() => setVoiceLockEnabled((value) => !value)}
+            >
+              {voiceLockEnabled ? "Voice Lock" : "Voice Open"}
             </button>
             <button
               type="button"
