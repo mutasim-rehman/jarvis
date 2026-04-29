@@ -136,7 +136,7 @@ def handle_open_url(task: Task, ctx: HandlerContext) -> TaskResult:
 
             # 3. If we didn't switch yet (maybe Arc was closed), wait and try again
             if not switched_msg:
-                time.sleep(3.0)  # wait for Arc to launch and window to appear
+                time.sleep(0.6)  # short wait to keep OPEN_URL responsive
                 if _switch_arc_space(profile_index):
                     switched_msg = f" (switched to Arc space {profile_index} after launch)"
         else:
@@ -176,7 +176,7 @@ def handle_get_highlights(task: Task, ctx: HandlerContext) -> TaskResult:
         # This avoids needing a local Playwright installation while still reaching JS-rendered content.
         jina_url = f"https://r.jina.ai/{url}"
         
-        with httpx.Client(timeout=45.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=12.0, follow_redirects=True) as client:
             # Use a simpler User-Agent which often works better with proxy services
             headers = {
                 "User-Agent": "Mozilla/5.0",
@@ -230,7 +230,7 @@ def handle_get_highlights(task: Task, ctx: HandlerContext) -> TaskResult:
                 ollama_resp = client.post(
                     f"{settings.ollama_base_url}/api/chat",
                     json=chat_payload,
-                    timeout=60.0,
+                    timeout=14.0,
                 )
                 if ollama_resp.status_code == 200:
                     summary = (

@@ -168,18 +168,24 @@ def _transcribe_with_vosk(audio_bytes: bytes, started: float, model_load_ms: flo
 
 
 def _transcribe_with_whisper(audio_bytes: bytes, started: float, model_load_ms: float) -> str:
+    decode_started = time.perf_counter()
     audio, frame_rate = _wav_bytes_to_float32(audio_bytes)
+    decode_ms = (time.perf_counter() - decode_started) * 1000
     model = _get_whisper_model()
+    infer_started = time.perf_counter()
     segments, _info = model.transcribe(
         audio=audio,
         language=settings.stt_whisper_language or None,
         beam_size=settings.stt_whisper_beam_size,
         vad_filter=settings.stt_whisper_vad_filter,
     )
+    infer_ms = (time.perf_counter() - infer_started) * 1000
     text = " ".join(segment.text.strip() for segment in segments if segment.text.strip()).strip()
-    logger.debug(
-        "stt provider=whisper model_load_ms=%.1f total_ms=%.1f bytes=%d frame_rate=%d chars=%d",
+    logger.info(
+        "stt provider=whisper model_load_ms=%.1f decode_ms=%.1f infer_ms=%.1f total_ms=%.1f bytes=%d frame_rate=%d chars=%d",
         model_load_ms,
+        decode_ms,
+        infer_ms,
         (time.perf_counter() - started) * 1000,
         len(audio_bytes),
         frame_rate,
@@ -204,7 +210,15 @@ def transcribe_wav_bytes(audio_bytes: bytes) -> str:
     started = time.perf_counter()
     if provider == "faster_whisper":
         return _transcribe_with_whisper(audio_bytes, started, model_load_ms)
-    return _transcribe_with_vosk(audio_bytes, started, model_load_ms)
+    text = _transcribe_with_vosk(audio_bytes, started, model_load_ms)
+    logger.info(
+        "stt provider=vosk model_load_ms=%.1f total_ms=%.1f bytes=%d chars=%d",
+        model_load_ms,
+        (time.perf_counter() - started) * 1000,
+        len(audio_bytes),
+        len(text),
+    )
+    return text
 
 
 def warmup_model() -> None:

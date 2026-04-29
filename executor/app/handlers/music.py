@@ -95,8 +95,8 @@ def _open_spotify_app() -> None:
         subprocess.Popen(["spotify"], close_fds=True)
 
 
-def _wait_for_device(client: httpx.Client, retries: int = 20, delay: float = 3.0) -> str | None:
-    """Poll for up to ~60 s until Spotify registers a device with its servers."""
+def _wait_for_device(client: httpx.Client, retries: int = 6, delay: float = 0.6) -> str | None:
+    """Poll quickly for a short window to keep interact latency low."""
     for attempt in range(1, retries + 1):
         device_id = _get_active_device(client)
         if device_id:
@@ -238,7 +238,7 @@ def handle_play_music(task: Task, ctx: HandlerContext) -> TaskResult:
 
             # Ensure the device is active (Transfer Playback)
             _activate_device(client, device_id)
-            time.sleep(1.0) # Give it a second to wake up
+            time.sleep(0.15)  # brief settle time before play call
 
             # 2. Resolve what to play
             if kind == "liked":

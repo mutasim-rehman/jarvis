@@ -1,5 +1,6 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const net = require("node:net");
 const { spawn } = require("node:child_process");
 const os = require("node:os");
 const { app, BrowserWindow, ipcMain } = require("electron");
@@ -112,6 +113,8 @@ const serviceConfigs = {
 const runningProcesses = new Map();
 /** @type {Map<string, string[]>} */
 const serviceLogs = new Map();
+/** @type {Map<string, {args: string[], healthUrl?: string, baseUrl?: string}>} */
+const serviceRuntime = new Map();
 
 function appendLog(serviceId, line) {
   if (!serviceLogs.has(serviceId)) {
@@ -134,6 +137,50 @@ function appendLog(serviceId, line) {
 
 function commandText(config) {
   return `${config.command} ${config.args.join(" ")}`;
+}
+
+function parsePortFromArgs(args) {
+  const portFlagIndex = args.findIndex((arg) => arg === "--port");
+  if (portFlagIndex < 0 || portFlagIndex + 1 >= args.length) {
+    return null;
+  }
+  const parsed = Number(args[portFlagIndex + 1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function withPortArgs(args, port) {
+  const nextArgs = [...args];
+  const portFlagIndex = nextArgs.findIndex((arg) => arg === "--port");
+  if (portFlagIndex >= 0 && portFlagIndex + 1 < nextArgs.length) {
+    nextArgs[portFlagIndex + 1] = String(port);
+    return nextArgs;
+  }
+  nextArgs.push("--port", String(port));
+  return nextArgs;
+}
+
+function checkPortAvailable(port, host) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => {
+      resolve(false);
+    });
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, host);
+  });
+}
+
+async function findAvailablePort(preferredPort, host, maxOffset = 25) {
+  for (let offset = 0; offset <= maxOffset; offset += 1) {
+    const candidate = preferredPort + offset;
+    const isAvailable = await checkPortAvailable(candidate, host);
+    if (isAvailable) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function parseTerminalMetadata(content) {
@@ -182,12 +229,14 @@ function parseTerminalMetadata(content) {
 
 function serviceStatus(serviceId) {
   const config = serviceConfigs[serviceId];
+  const runtime = serviceRuntime.get(serviceId);
   const processEntry = runningProcesses.get(serviceId);
   const isRunning = !!(processEntry && !processEntry.child.killed);
+  const activeConfig = runtime ? { ...config, ...runtime } : config;
   return {
     id: config.id,
     name: config.name,
-    command: commandText(config),
+    command: commandText(activeConfig),
     running: isRunning,
     pid: isRunning ? processEntry.child.pid ?? null : null,
     startedAt: isRunning ? processEntry.startedAt : null,
@@ -227,14 +276,45 @@ function wireProcessLogs(serviceId, child) {
   });
 }
 
-function startService(serviceId) {
+async function resolveRuntimeForService(serviceId) {
+  const config = serviceConfigs[serviceId];
+  const preferredPort = parsePortFromArgs(config.args);
+  if (!preferredPort || !config.healthUrl) {
+    const noPortRuntime = { args: [...config.args] };
+    serviceRuntime.set(serviceId, noPortRuntime);
+    return noPortRuntime;
+  }
+
+  const host = config.healthUrl.includes("127.0.0.1") ? "127.0.0.1" : "0.0.0.0";
+  const selectedPort = await findAvailablePort(preferredPort, host);
+  if (!selectedPort) {
+    throw new Error(`${config.name}: unable to find available port near ${preferredPort}`);
+  }
+
+  const runtime = {
+    args: withPortArgs(config.args, selectedPort),
+    healthUrl: config.healthUrl.replace(/:\d+/, `:${selectedPort}`),
+    baseUrl: `http://${host}:${selectedPort}`,
+  };
+  serviceRuntime.set(serviceId, runtime);
+  if (selectedPort !== preferredPort) {
+    appendLog(
+      serviceId,
+      `[port-fallback] preferred ${preferredPort} busy, using ${selectedPort}`
+    );
+  }
+  return runtime;
+}
+
+async function startService(serviceId) {
   const config = serviceConfigs[serviceId];
   const current = runningProcesses.get(serviceId);
   if (current && !current.child.killed) {
     return serviceStatus(serviceId);
   }
 
-  const child = spawn(config.command, config.args, {
+  const runtime = await resolveRuntimeForService(serviceId);
+  const child = spawn(config.command, runtime.args, {
     cwd: repoRoot,
     env: {
       ...process.env,
@@ -270,12 +350,14 @@ function stopService(serviceId) {
 
 async function checkHealth(serviceId) {
   const config = serviceConfigs[serviceId];
-  if (!config?.healthUrl) {
+  const runtime = serviceRuntime.get(serviceId);
+  const healthUrl = runtime?.healthUrl ?? config?.healthUrl;
+  if (!healthUrl) {
     return { ok: false, status: 0, error: "No health endpoint configured." };
   }
 
   try {
-    const response = await fetch(config.healthUrl, {
+    const response = await fetch(healthUrl, {
       signal: AbortSignal.timeout(3000),
     });
     if (!response.ok) {
@@ -291,6 +373,7 @@ async function checkHealth(serviceId) {
 
 async function callInteract(text, baseUrl, chatProvider) {
   const url = `${baseUrl.replace(/\/+$/, "")}/api/interact`;
+  const startedAt = Date.now();
   let response;
   const body = { text };
   if (chatProvider) {
@@ -316,8 +399,9 @@ async function callInteract(text, baseUrl, chatProvider) {
     const responseText = await response.text();
     throw new Error(`Backend returned ${response.status}: ${responseText || response.statusText}`);
   }
-
-  return response.json();
+  const data = await response.json();
+  appendLog("backend", `[perf] interact_roundtrip_ms=${Date.now() - startedAt} chars=${text.length}`);
+  return data;
 }
 
 async function callTranscribe(wavBytes, baseUrl) {
@@ -344,6 +428,7 @@ async function callTranscribe(wavBytes, baseUrl) {
 
 async function callTts(text, baseUrl) {
   const url = `${baseUrl.replace(/\/+$/, "")}/api/tts`;
+  const startedAt = Date.now();
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -357,8 +442,9 @@ async function callTts(text, baseUrl) {
     const responseText = await response.text();
     throw new Error(`TTS failed ${response.status}: ${responseText || response.statusText}`);
   }
-
-  return response.json();
+  const data = await response.json();
+  appendLog("backend", `[perf] tts_roundtrip_ms=${Date.now() - startedAt} chars=${text.length}`);
+  return data;
 }
 
 async function listCursorTerminals() {
@@ -460,12 +546,26 @@ app.on("before-quit", () => {
   }
 });
 
+function getServiceBaseUrl(serviceId) {
+  const config = serviceConfigs[serviceId];
+  const runtime = serviceRuntime.get(serviceId);
+  if (runtime?.baseUrl) {
+    return runtime.baseUrl;
+  }
+  const preferredPort = parsePortFromArgs(config.args);
+  if (!preferredPort) {
+    return "";
+  }
+  return `http://127.0.0.1:${preferredPort}`;
+}
+
 ipcMain.handle("services:list", async () => listServiceStatuses());
 ipcMain.handle("services:start", async (_event, serviceId) => startService(serviceId));
 ipcMain.handle("services:stop", async (_event, serviceId) => stopService(serviceId));
 ipcMain.handle("services:start-all", async () => {
   for (const serviceId of Object.keys(serviceConfigs)) {
-    startService(serviceId);
+    // start each service in order so port fallback logs stay readable.
+    await startService(serviceId);
   }
   return listServiceStatuses();
 });
@@ -476,6 +576,7 @@ ipcMain.handle("services:stop-all", async () => {
   return listServiceStatuses();
 });
 ipcMain.handle("services:health", async (_event, serviceId) => checkHealth(serviceId));
+ipcMain.handle("services:base-url", async (_event, serviceId) => getServiceBaseUrl(serviceId));
 ipcMain.handle("backend:interact", async (_event, text, baseUrl, chatProvider) => {
   try {
     const data = await callInteract(text, baseUrl, chatProvider);

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import shutil
 import subprocess
 import sys
 import threading
 import tempfile
+import time
 import wave
 from collections.abc import Iterator
 from pathlib import Path
@@ -33,6 +35,7 @@ _pipeline_lock = threading.Lock()
 _pipeline = None
 _piper_lock = threading.Lock()
 _piper_voice = None
+logger = logging.getLogger(__name__)
 
 try:
     from piper.voice import PiperVoice
@@ -324,10 +327,27 @@ def synthesize_piper_wav(text: str, speed: float | None = None) -> tuple[bytes, 
 
 def synthesize_tts_wav(text: str, voice: str | None = None, speed: float | None = None) -> tuple[bytes, int]:
     provider = (settings.tts_provider or "kokoro").strip().lower()
+    started = time.perf_counter()
     if provider == "piper":
-        return synthesize_piper_wav(text=text, speed=speed)
+        wav_bytes, sample_rate = synthesize_piper_wav(text=text, speed=speed)
+        logger.info(
+            "tts provider=%s synth_ms=%.1f chars=%d sample_rate=%d",
+            provider,
+            (time.perf_counter() - started) * 1000,
+            len((text or "").strip()),
+            sample_rate,
+        )
+        return wav_bytes, sample_rate
     if provider == "kokoro":
-        return synthesize_kokoro_wav(text=text, voice=voice, speed=speed)
+        wav_bytes, sample_rate = synthesize_kokoro_wav(text=text, voice=voice, speed=speed)
+        logger.info(
+            "tts provider=%s synth_ms=%.1f chars=%d sample_rate=%d",
+            provider,
+            (time.perf_counter() - started) * 1000,
+            len((text or "").strip()),
+            sample_rate,
+        )
+        return wav_bytes, sample_rate
     raise RuntimeError(f"Unsupported TTS provider '{settings.tts_provider}'.")
 
 

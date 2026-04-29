@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("desktopApi", {
   startAllServices: () => ipcRenderer.invoke("services:start-all"),
   stopAllServices: () => ipcRenderer.invoke("services:stop-all"),
   checkServiceHealth: (serviceId) => ipcRenderer.invoke("services:health", serviceId),
+  getServiceBaseUrl: (serviceId) => ipcRenderer.invoke("services:base-url", serviceId),
   interactWithBackend: (text, baseUrl, chatProvider) =>
     ipcRenderer.invoke("backend:interact", text, baseUrl, chatProvider),
   transcribeAudio: (wavBytes, baseUrl) => ipcRenderer.invoke("backend:transcribe", wavBytes, baseUrl),

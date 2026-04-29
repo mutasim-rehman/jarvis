@@ -5,7 +5,7 @@ import { JarvisHUD } from "./JarvisHUD";
 
 const healthServiceIds: ServiceId[] = ["backend", "executor"];
 const coreServiceIds: ServiceId[] = ["backend", "executor", "cli"];
-const backendBaseUrl = "http://127.0.0.1:8000";
+const defaultBackendBaseUrl = "http://127.0.0.1:8000";
 
 type ConversationRole = "user" | "assistant" | "system";
 type ConversationMessage = {
@@ -217,8 +217,10 @@ function wavBytesFromPcm16(pcm: Int16Array, sampleRate: number): Uint8Array {
 export default function App() {
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [health, setHealth] = useState<Record<"backend" | "executor", HealthResponse>>(defaultHealthMap);
+  const [backendBaseUrl, setBackendBaseUrl] = useState(defaultBackendBaseUrl);
   const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
+  const [inFlightChatCount, setInFlightChatCount] = useState(0);
+  const [chatLongRunning, setChatLongRunning] = useState(false);
   const [botMode, setBotMode] = useState<BotMode>("jarvis_cloud");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [micOn, setMicOn] = useState(false);
@@ -276,6 +278,11 @@ export default function App() {
     setServices(next);
   }, []);
 
+  const refreshBackendBaseUrl = useCallback(async () => {
+    const nextBaseUrl = await window.desktopApi.getServiceBaseUrl("backend");
+    setBackendBaseUrl(nextBaseUrl || defaultBackendBaseUrl);
+  }, []);
+
   const refreshHealth = useCallback(async () => {
     const nextHealth = await Promise.all(
       healthServiceIds.map(async (id) => [id, await window.desktopApi.checkServiceHealth(id)] as const)
@@ -289,8 +296,8 @@ export default function App() {
   }, []);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([refreshServices(), refreshHealth()]);
-  }, [refreshHealth, refreshServices]);
+    await Promise.all([refreshServices(), refreshHealth(), refreshBackendBaseUrl()]);
+  }, [refreshBackendBaseUrl, refreshHealth, refreshServices]);
 
   const addMessage = useCallback((role: ConversationRole, text: string) => {
     const payload = text.trim();
@@ -313,17 +320,19 @@ export default function App() {
 
   const voiceStatus = useMemo(() => {
     if (assistantSpeaking) return "speaking";
-    if (chatLoading || localTranscribeBusy) return "processing";
+    if (inFlightChatCount > 0 || localTranscribeBusy) return "processing";
     if (micOn) return "listening";
     return "idle";
-  }, [assistantSpeaking, chatLoading, localTranscribeBusy, micOn]);
+  }, [assistantSpeaking, inFlightChatCount, localTranscribeBusy, micOn]);
 
   const voiceStatusLabel = useMemo(() => {
     if (voiceStatus === "speaking") return "Speaking...";
-    if (voiceStatus === "processing") return "Processing...";
+    if (voiceStatus === "processing") {
+      return chatLongRunning ? "Still processing..." : "Processing...";
+    }
     if (voiceStatus === "listening") return voiceDetected ? "Listening (voice detected)" : "Listening...";
     return "Not listening";
-  }, [voiceDetected, voiceStatus]);
+  }, [chatLongRunning, voiceDetected, voiceStatus]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -395,7 +404,10 @@ export default function App() {
     if (!suppressUserMessage) {
       addMessage("user", text);
     }
-    setChatLoading(true);
+    setInFlightChatCount((current) => current + 1);
+    let longRunningTimer: number | null = window.setTimeout(() => {
+      setChatLongRunning(true);
+    }, 1200);
     const provider = chatProvider ?? activeProvider;
     try {
       const result = await window.desktopApi.interactWithBackend(text, backendBaseUrl, provider);
@@ -430,10 +442,20 @@ export default function App() {
       const message = e instanceof Error ? e.message : "Unknown request error";
       addMessage("system", message);
     } finally {
-      setChatLoading(false);
+      if (longRunningTimer !== null) {
+        window.clearTimeout(longRunningTimer);
+        longRunningTimer = null;
+      }
+      setInFlightChatCount((current) => {
+        const next = Math.max(0, current - 1);
+        if (next === 0) {
+          setChatLongRunning(false);
+        }
+        return next;
+      });
       await refreshHealth();
     }
-  }, [activeProvider, addMessage, logPerf, refreshHealth, speakAssistant, speakModeOn]);
+  }, [activeProvider, addMessage, backendBaseUrl, logPerf, refreshHealth, speakAssistant, speakModeOn]);
 
   const stopMicRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -512,7 +534,7 @@ export default function App() {
         void transcribeLocalSegment(pending.audio, pending.inputSampleRate);
       }
     }
-  }, [addMessage, isMicSuppressed, logPerf, sendText]);
+  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText]);
 
   const startLocalMicCapture = useCallback(async () => {
     if (localMicStateRef.current || localMicInitializingRef.current) return;
@@ -776,8 +798,10 @@ export default function App() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    await sendText(chatInput);
+    const text = chatInput.trim();
+    if (!text) return;
     setChatInput("");
+    await sendText(text);
   };
 
   return (
@@ -876,10 +900,9 @@ export default function App() {
               placeholder="Enter command..."
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              disabled={chatLoading}
             />
-            <button type="submit" disabled={chatLoading}>
-              {chatLoading ? "Sending..." : "Send"}
+            <button type="submit" disabled={!chatInput.trim()}>
+              {inFlightChatCount > 0 ? "Sending..." : "Send"}
             </button>
             <button type="button" className={micOn ? "active" : ""} onClick={() => setMicOn((value) => !value)}>
               {micOn ? "Mic On" : "Mic"}

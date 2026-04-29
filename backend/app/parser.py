@@ -278,20 +278,31 @@ def _wrap(message: str, command: ActionCommand | None, meta: dict[str, Any] | No
 
 async def parse_intent(text: str, chat_provider: str | None = None) -> AssistantResponse:
     started = time.perf_counter()
+    def _finish(result: AssistantResponse, path: str, llm_ms: float = 0.0) -> AssistantResponse:
+        logger.info(
+            "parse_intent timing path=%s llm_ms=%.1f total_ms=%.1f route=%s has_command=%s",
+            path,
+            llm_ms,
+            (time.perf_counter() - started) * 1000,
+            result.route,
+            bool(result.command),
+        )
+        return result
+
     quick = _quick_conversational_response(text)
     if quick:
-        return _wrap(quick, None)
+        return _finish(_wrap(quick, None), "quick_path")
 
     cls = classify_user_text(text)
 
     # Fast-path deterministic intents so common desktop commands still work
     # even if LLM/Ollama is unavailable.
     if cls.suppress_structured_command:
-        return _wrap("Sure — what would you like to do?", None)
+        return _finish(_wrap("Sure — what would you like to do?", None), "heuristic_suppressed")
 
     if cls.force_intent:
         cmd = _build_command(cls.force_intent, cls.force_target)
-        return _wrap(_forced_intent_message(cls.force_intent), cmd)
+        return _finish(_wrap(_forced_intent_message(cls.force_intent), cmd), "heuristic_forced")
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.strip()},
@@ -306,30 +317,31 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
             response = await generate_chat(messages=messages, preferred_provider=chat_provider)
         else:
             response = await generate_chat(messages=messages)
-        logger.debug("parse_intent llm_ms=%.1f provider=%s", (time.perf_counter() - llm_started) * 1000, chat_provider or "default")
+        llm_ms = (time.perf_counter() - llm_started) * 1000
+        logger.debug("parse_intent llm_ms=%.1f provider=%s", llm_ms, chat_provider or "default")
         content = response.get("message", {}).get("content", "").strip()
         base_message = _extract_conversational_message(content) if content else ""
     except ProviderUnavailableError as exc:
         fb_intent, fb_target = _fallback_intent_from_user_text(text)
         if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
             cmd = _build_command(fb_intent, fb_target)
-            return _wrap("On it.", cmd)
+            return _finish(_wrap("On it.", cmd), "provider_unavailable_fallback")
         provider_name = exc.provider.capitalize()
-        return _wrap(
+        return _finish(_wrap(
             f"{provider_name} chatbot is unavailable right now. Choose whether to wait/retry or run locally with Ollama.",
             None,
             meta=_provider_unavailable_meta(exc.provider, exc.reason),
-        )
+        ), "provider_unavailable")
     except RuntimeError:
         # Graceful fallback when the configured provider fails unexpectedly.
         fb_intent, fb_target = _fallback_intent_from_user_text(text)
         if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
             cmd = _build_command(fb_intent, fb_target)
-            return _wrap("On it.", cmd)
-        return _wrap(
+            return _finish(_wrap("On it.", cmd), "provider_runtime_fallback")
+        return _finish(_wrap(
             "I couldn't reach the chatbot provider right now. Please try again.",
             None,
-        )
+        ), "provider_runtime_error")
 
     json_start = content.find("{")
     if json_start != -1:
@@ -355,51 +367,45 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
 
             if intent in ("UNKNOWN", "GENERAL_CHAT"):
                 msg = base_message or _normalize_assistant_message(content[:json_start].strip()) or "Okay."
-                return _wrap(msg, None)
+                return _finish(_wrap(msg, None), "llm_general_chat", llm_ms)
 
             if should_drop_workflow_without_domain(text, intent):
                 msg = base_message or "What should I help you with?"
-                return _wrap(msg, None)
+                return _finish(_wrap(msg, None), "llm_dropped_without_domain", llm_ms)
 
             cmd = _build_command(intent, target)
             msg = base_message or "Done."
-            return _wrap(msg, cmd)
+            return _finish(_wrap(msg, cmd), "llm_json_command", llm_ms)
         except json.JSONDecodeError:
             extracted = _extract_intent_from_text(content)
             if extracted and extracted not in {"GENERAL_CHAT", "UNKNOWN"}:
                 extracted, _t = reconcile_llm_intent(text, extracted, None)
                 if should_drop_workflow_without_domain(text, extracted):
-                    return _wrap(base_message or content, None)
+                    return _finish(_wrap(base_message or content, None), "llm_text_dropped_without_domain", llm_ms)
                 if extracted in ("GENERAL_CHAT", "UNKNOWN"):
-                    return _wrap(base_message or content, None)
+                    return _finish(_wrap(base_message or content, None), "llm_text_general_chat", llm_ms)
                 cmd = _build_command(extracted, None)
-                return _wrap(base_message or "On it.", cmd)
+                return _finish(_wrap(base_message or "On it.", cmd), "llm_text_command", llm_ms)
             fb_intent, fb_target = _fallback_intent_from_user_text(text)
             if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
                 cmd = _build_command(fb_intent, fb_target)
-                return _wrap(base_message or "On it.", cmd)
-            return _wrap(base_message or content, None)
+                return _finish(_wrap(base_message or "On it.", cmd), "llm_json_invalid_fallback", llm_ms)
+            return _finish(_wrap(base_message or content, None), "llm_json_invalid_informational", llm_ms)
 
     extracted = _extract_intent_from_text(content)
     if extracted and extracted not in {"GENERAL_CHAT", "UNKNOWN"}:
         extracted, ext_target = reconcile_llm_intent(text, extracted, None)
         if should_drop_workflow_without_domain(text, extracted):
-            return _wrap(base_message or content, None)
+            return _finish(_wrap(base_message or content, None), "llm_no_json_dropped_without_domain", llm_ms)
         if extracted in ("GENERAL_CHAT", "UNKNOWN"):
-            return _wrap(base_message or content, None)
+            return _finish(_wrap(base_message or content, None), "llm_no_json_general_chat", llm_ms)
         cmd = _build_command(extracted, ext_target)
-        return _wrap(base_message or "On it.", cmd)
+        return _finish(_wrap(base_message or "On it.", cmd), "llm_no_json_command", llm_ms)
 
     fb_intent, fb_target = _fallback_intent_from_user_text(text)
     if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
         cmd = _build_command(fb_intent, fb_target)
-        return _wrap(base_message or content or "On it.", cmd)
+        return _finish(_wrap(base_message or content or "On it.", cmd), "fallback_intent")
 
     result = _wrap(base_message or content, None)
-    logger.debug(
-        "parse_intent total_ms=%.1f route=%s has_command=%s",
-        (time.perf_counter() - started) * 1000,
-        result.route,
-        bool(result.command),
-    )
-    return result
+    return _finish(result, "fallback_informational")

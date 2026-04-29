@@ -56,6 +56,7 @@ interface DesktopApi {
   startAllServices: () => Promise<ServiceStatus[]>;
   stopAllServices: () => Promise<ServiceStatus[]>;
   checkServiceHealth: (serviceId: ServiceId) => Promise<HealthResponse>;
+  getServiceBaseUrl: (serviceId: ServiceId) => Promise<string>;
   interactWithBackend: (
     text: string,
     baseUrl: string,

@@ -15,6 +15,7 @@ def test_generate_chat_defaults_to_huggingface(monkeypatch):
         return {"message": {"content": "hf ok"}}
 
     monkeypatch.setattr("backend.chatbot.service._call_hf", fake_hf)
+    monkeypatch.setattr("backend.chatbot.service._is_ollama_available", lambda: asyncio.sleep(0, result=False))
     result = asyncio.run(generate_chat(messages=[{"role": "user", "content": "hello"}]))
     assert result["message"]["content"] == "hf ok"
 
@@ -38,6 +39,7 @@ def test_generate_chat_hf_failure_bubbles_up(monkeypatch):
         raise ProviderUnavailableError(provider="huggingface", reason="network down")
 
     monkeypatch.setattr("backend.chatbot.service._call_hf", fake_hf)
+    monkeypatch.setattr("backend.chatbot.service._is_ollama_available", lambda: asyncio.sleep(0, result=False))
     with pytest.raises(ProviderUnavailableError):
         asyncio.run(generate_chat(messages=[{"role": "user", "content": "hello"}]))
 

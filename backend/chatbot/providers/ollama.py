@@ -1,6 +1,7 @@
 from typing import Any
 
 import httpx
+import time
 
 from ..config import settings
 from ..types import ProviderUnavailableError
@@ -19,8 +20,15 @@ async def generate_chat_ollama(messages: list[dict[str, Any]], format: Any = Non
         payload["format"] = format
 
     try:
+        started = time.perf_counter()
         response = await _ollama_client.post(f"{settings.ollama_base_url}/api/chat", json=payload)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        data["meta"] = {
+            "provider": "ollama",
+            "timing_ms": round((time.perf_counter() - started) * 1000, 2),
+            "input_chars": sum(len(str(m.get("content", ""))) for m in messages),
+        }
+        return data
     except httpx.HTTPError as exc:
         raise ProviderUnavailableError(provider="ollama", reason=str(exc)) from exc

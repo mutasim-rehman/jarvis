@@ -66,10 +66,17 @@ async def parse_text(
     request: ParseRequest,
     _: None = Depends(verify_dev_api_key),
 ):
+    started = time.perf_counter()
     if request.chat_provider:
         command = await parse_intent(request.text, chat_provider=request.chat_provider)
     else:
         command = await parse_intent(request.text)
+    logger.info(
+        "parse_api timing total_ms=%.1f route=%s has_command=%s",
+        (time.perf_counter() - started) * 1000,
+        command.route,
+        bool(command.command),
+    )
     return ParseResponse(command=command, original_text=request.text)
 
 
@@ -95,6 +102,7 @@ async def interact(
     
     # 2. Execute if a command exists and routing allows it
     execute_ms = 0.0
+    execution_mode = "none"
     if assistant_resp.command and assistant_resp.route == RouteKind.DESKTOP_EXECUTION:
         execute_started = time.perf_counter()
         run_task = asyncio.create_task(executor_client.run_command(assistant_resp.command))
@@ -104,19 +112,29 @@ async def interact(
                 timeout=max(0.1, settings.executor_inline_wait_seconds),
             )
             execute_ms = (time.perf_counter() - execute_started) * 1000
+            execution_mode = "inline"
         except asyncio.TimeoutError:
             run_task.add_done_callback(_log_executor_task_result)
             execute_ms = (time.perf_counter() - execute_started) * 1000
             assistant_resp.meta["execution_pending"] = True
+            execution_mode = "deferred"
             logger.info(
                 "interact execution deferred inline_wait_s=%.2f",
                 settings.executor_inline_wait_seconds,
             )
+    total_ms = (time.perf_counter() - request_started) * 1000
+    assistant_resp.meta["timing_ms"] = {
+        "parse_ms": round(parse_ms, 2),
+        "executor_inline_wait_ms": round(execute_ms, 2),
+        "total_ms": round(total_ms, 2),
+    }
+    assistant_resp.meta["execution_mode"] = execution_mode
     logger.info(
-        "interact timing parse_ms=%.1f execute_ms=%.1f total_ms=%.1f route=%s has_command=%s",
+        "interact timing parse_ms=%.1f execute_ms=%.1f total_ms=%.1f mode=%s route=%s has_command=%s",
         parse_ms,
         execute_ms,
-        (time.perf_counter() - request_started) * 1000,
+        total_ms,
+        execution_mode,
         assistant_resp.route,
         bool(assistant_resp.command),
     )
@@ -146,8 +164,15 @@ async def transcribe_audio(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     elapsed_ms = (time.perf_counter() - started) * 1000
-    logger.info("transcribe timing total_ms=%.1f bytes=%d chars=%d", elapsed_ms, len(audio_bytes), len(text))
-    return {"text": text, "meta": {"timing_ms": round(elapsed_ms, 2)}}
+    provider = (settings.stt_provider or "unknown").strip().lower()
+    logger.info(
+        "transcribe timing provider=%s total_ms=%.1f bytes=%d chars=%d",
+        provider,
+        elapsed_ms,
+        len(audio_bytes),
+        len(text),
+    )
+    return {"text": text, "meta": {"timing_ms": round(elapsed_ms, 2), "provider": provider, "audio_bytes": len(audio_bytes)}}
 
 
 class TtsRequest(BaseModel):
@@ -179,11 +204,12 @@ async def synthesize_tts(
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     logger.info(
-        "tts timing provider=%s total_ms=%.1f chars=%d sample_rate=%d",
+        "tts timing provider=%s total_ms=%.1f chars=%d sample_rate=%d voice=%s",
         settings.tts_provider,
         elapsed_ms,
         len(request.text),
         sample_rate,
+        selected_voice or "",
     )
     return {
         "audio_base64": base64.b64encode(wav_bytes).decode("ascii"),

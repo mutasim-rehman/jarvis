@@ -2,6 +2,7 @@ import asyncio
 import json
 import types
 import threading
+import time
 from typing import Any
 
 from gradio_client import Client
@@ -82,15 +83,24 @@ async def generate_chat_hf_space(messages: list[dict[str, Any]], format: Any = N
         raise ProviderUnavailableError(provider="huggingface", reason="Missing user message for Space request")
 
     system_message = _extract_system_message(messages)
+    started = time.perf_counter()
     try:
-        result = await asyncio.to_thread(
-            _predict_with_client,
-            message=user_message,
-            system_message=system_message,
-            max_tokens=settings.hf_max_tokens,
-            temperature=settings.hf_temperature,
-            top_p=settings.hf_top_p,
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                _predict_with_client,
+                message=user_message,
+                system_message=system_message,
+                max_tokens=settings.hf_max_tokens,
+                temperature=settings.hf_temperature,
+                top_p=settings.hf_top_p,
+            ),
+            timeout=max(0.05, settings.timeout_seconds),
         )
+    except asyncio.TimeoutError as exc:
+        raise ProviderUnavailableError(
+            provider="huggingface",
+            reason=f"Hugging Face request timed out after {settings.timeout_seconds:.1f}s",
+        ) from exc
     except Exception as exc:
         raise ProviderUnavailableError(provider="huggingface", reason=str(exc)) from exc
 
@@ -99,4 +109,12 @@ async def generate_chat_hf_space(messages: list[dict[str, Any]], format: Any = N
     else:
         content = json.dumps(result, ensure_ascii=True)
 
-    return {"message": {"content": content}}
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    return {
+        "message": {"content": content},
+        "meta": {
+            "provider": "huggingface",
+            "timing_ms": round(elapsed_ms, 2),
+            "input_chars": len(user_message),
+        },
+    }

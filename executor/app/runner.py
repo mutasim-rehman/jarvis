@@ -25,6 +25,7 @@ _HANDLERS = {
     "WATCH_VIDEO": handle_watch_video,
     "MORNING_RITUAL": handle_morning_ritual,
 }
+_allowlist_cache: dict[str, tuple[float, tuple[list[Path], dict[str, str], dict[str, str]]]] = {}
 
 
 def normalize_tasks(cmd: ActionCommand) -> list[Task]:
@@ -45,7 +46,14 @@ def normalize_tasks(cmd: ActionCommand) -> list[Task]:
 
 
 def build_context(allowlist_file: Path | None) -> HandlerContext:
-    roots, apps, url_aliases = load_allowlist_config(allowlist_file)
+    cache_key = str(allowlist_file.resolve()) if allowlist_file else "__default__"
+    mtime = allowlist_file.stat().st_mtime if allowlist_file and allowlist_file.exists() else 0.0
+    cached = _allowlist_cache.get(cache_key)
+    if cached and cached[0] == mtime:
+        roots, apps, url_aliases = cached[1]
+    else:
+        roots, apps, url_aliases = load_allowlist_config(allowlist_file)
+        _allowlist_cache[cache_key] = (mtime, (list(roots), dict(apps), dict(url_aliases)))
     
     # Add project and assignment locations as allowed roots
     for loc in [settings.assignment_location, settings.project_location]:
