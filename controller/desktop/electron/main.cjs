@@ -447,6 +447,68 @@ async function callTts(text, baseUrl) {
   return data;
 }
 
+async function callVoiceprintStatus(baseUrl) {
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/voiceprint/status`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Voiceprint status failed ${response.status}: ${responseText || response.statusText}`);
+  }
+  return response.json();
+}
+
+async function callVoiceprintReset(baseUrl) {
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/voiceprint/reset`;
+  const response = await fetch(url, { method: "POST", signal: AbortSignal.timeout(15000) });
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Voiceprint reset failed ${response.status}: ${responseText || response.statusText}`);
+  }
+  return response.json();
+}
+
+async function callVoiceprintEnroll(wavBytes, baseUrl) {
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/voiceprint/enroll`;
+  const wavBuffer = Buffer.isBuffer(wavBytes) ? wavBytes : Buffer.from(wavBytes);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audio_base64: wavBuffer.toString("base64") }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Voiceprint enroll failed ${response.status}: ${responseText || response.statusText}`);
+  }
+  return response.json();
+}
+
+async function callVoiceprintFinalize(baseUrl) {
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/voiceprint/finalize`;
+  const response = await fetch(url, { method: "POST", signal: AbortSignal.timeout(30000) });
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Voiceprint finalize failed ${response.status}: ${responseText || response.statusText}`);
+  }
+  return response.json();
+}
+
+async function callVoiceprintVerify(wavBytes, baseUrl) {
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/voiceprint/verify`;
+  const wavBuffer = Buffer.isBuffer(wavBytes) ? wavBytes : Buffer.from(wavBytes);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "audio/wav" },
+    body: wavBuffer,
+    signal: AbortSignal.timeout(45000),
+  });
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Voiceprint verify failed ${response.status}: ${responseText || response.statusText}`);
+  }
+  return response.json();
+}
+
 async function listCursorTerminals() {
   try {
     const cursorTerminalsDir = await resolveCursorTerminalsDir();
@@ -604,6 +666,56 @@ ipcMain.handle("backend:tts", async (_event, text, baseUrl) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown TTS error";
     appendLog("backend", `[tts-error] ${message}`);
+    return { ok: false, error: message };
+  }
+});
+ipcMain.handle("backend:voiceprint-status", async (_event, baseUrl) => {
+  try {
+    const data = await callVoiceprintStatus(baseUrl);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown voiceprint status error";
+    appendLog("backend", `[voiceprint-status-error] ${message}`);
+    return { ok: false, error: message };
+  }
+});
+ipcMain.handle("backend:voiceprint-reset", async (_event, baseUrl) => {
+  try {
+    const data = await callVoiceprintReset(baseUrl);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown voiceprint reset error";
+    appendLog("backend", `[voiceprint-reset-error] ${message}`);
+    return { ok: false, error: message };
+  }
+});
+ipcMain.handle("backend:voiceprint-enroll", async (_event, wavBytes, baseUrl) => {
+  try {
+    const data = await callVoiceprintEnroll(wavBytes, baseUrl);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown voiceprint enroll error";
+    appendLog("backend", `[voiceprint-enroll-error] ${message}`);
+    return { ok: false, error: message };
+  }
+});
+ipcMain.handle("backend:voiceprint-finalize", async (_event, baseUrl) => {
+  try {
+    const data = await callVoiceprintFinalize(baseUrl);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown voiceprint finalize error";
+    appendLog("backend", `[voiceprint-finalize-error] ${message}`);
+    return { ok: false, error: message };
+  }
+});
+ipcMain.handle("backend:voiceprint-verify", async (_event, wavBytes, baseUrl) => {
+  try {
+    const data = await callVoiceprintVerify(wavBytes, baseUrl);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown voiceprint verify error";
+    appendLog("backend", `[voiceprint-verify-error] ${message}`);
     return { ok: false, error: message };
   }
 });

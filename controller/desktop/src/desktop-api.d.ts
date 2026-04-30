@@ -49,6 +49,20 @@ export interface TerminalSnapshot {
   lastExitCode: string;
 }
 
+export interface VoiceprintStatus {
+  enabled: boolean;
+  samples_collected: number;
+  min_required_samples: number;
+  threshold: number;
+}
+
+export interface VoiceprintVerifyResult {
+  matched: boolean;
+  score: number;
+  threshold: number;
+  enabled: boolean;
+}
+
 interface DesktopApi {
   listServices: () => Promise<ServiceStatus[]>;
   startService: (serviceId: ServiceId) => Promise<ServiceStatus>;
@@ -73,6 +87,20 @@ interface DesktopApi {
     | { ok: true; data: { audio_base64?: string; sample_rate?: number; format?: string; voice?: string } }
     | { ok: false; error: string }
   >;
+  getVoiceprintStatus: (baseUrl: string) => Promise<{ ok: true; data: VoiceprintStatus } | { ok: false; error: string }>;
+  resetVoiceprint: (baseUrl: string) => Promise<{ ok: true; data: VoiceprintStatus } | { ok: false; error: string }>;
+  enrollVoiceprintSample: (
+    wavBytes: Uint8Array,
+    baseUrl: string,
+  ) => Promise<
+    | { ok: true; data: { samples_collected: number; min_required_samples: number; ready_to_finalize: boolean } }
+    | { ok: false; error: string }
+  >;
+  finalizeVoiceprint: (baseUrl: string) => Promise<{ ok: true; data: VoiceprintStatus } | { ok: false; error: string }>;
+  verifyVoiceprint: (
+    wavBytes: Uint8Array,
+    baseUrl: string,
+  ) => Promise<{ ok: true; data: VoiceprintVerifyResult } | { ok: false; error: string }>;
   getRepoRoot: () => Promise<string>;
   getJarvisProfile: () => Promise<{ ok: true; data: JarvisProfile } | { ok: false; error: string }>;
   listTerminals: () => Promise<

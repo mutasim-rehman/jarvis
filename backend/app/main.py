@@ -18,6 +18,13 @@ from .parser import parse_intent
 from .executor_client import executor_client
 from .stt import transcribe_wav_bytes, warmup_model
 from .tts import iter_tts_wav_chunks, synthesize_tts_wav, warmup_tts
+from .voiceprint import (
+    enroll_voiceprint_sample,
+    finalize_voiceprint,
+    get_voiceprint_status,
+    reset_voiceprint,
+    verify_voiceprint,
+)
 
 app = FastAPI(
     title="JARVIS Backend API",
@@ -181,6 +188,10 @@ class TtsRequest(BaseModel):
     speed: float | None = None
 
 
+class VoiceprintEnrollRequest(BaseModel):
+    audio_base64: str = Field(min_length=1)
+
+
 @app.post("/api/tts")
 async def synthesize_tts(
     request: TtsRequest,
@@ -219,6 +230,60 @@ async def synthesize_tts(
         "provider": settings.tts_provider,
         "meta": {"timing_ms": round(elapsed_ms, 2)},
     }
+
+
+@app.get("/api/voiceprint/status")
+async def voiceprint_status(
+    _: None = Depends(verify_dev_api_key),
+):
+    return get_voiceprint_status()
+
+
+@app.post("/api/voiceprint/reset")
+async def voiceprint_reset(
+    _: None = Depends(verify_dev_api_key),
+):
+    return reset_voiceprint()
+
+
+@app.post("/api/voiceprint/enroll")
+async def voiceprint_enroll(
+    request: VoiceprintEnrollRequest,
+    _: None = Depends(verify_dev_api_key),
+):
+    try:
+        audio_bytes = base64.b64decode(request.audio_base64.encode("ascii"), validate=True)
+        return enroll_voiceprint_sample(audio_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/voiceprint/finalize")
+async def voiceprint_finalize(
+    _: None = Depends(verify_dev_api_key),
+):
+    try:
+        return finalize_voiceprint()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/voiceprint/verify")
+async def voiceprint_verify(
+    request: Request,
+    _: None = Depends(verify_dev_api_key),
+):
+    try:
+        audio_bytes = await request.body()
+        return verify_voiceprint(audio_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/tts/stream")

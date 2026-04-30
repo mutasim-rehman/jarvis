@@ -1,4 +1,5 @@
 .idea
 .env
 backend/models/
+backend/data/voiceprint/
 controller/desktop_rough_idea.svg

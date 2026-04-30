@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HealthResponse, ServiceId, ServiceStatus, TerminalSnapshot } from "./desktop-api";
+import type { HealthResponse, ServiceId, ServiceStatus, TerminalSnapshot, VoiceprintStatus } from "./desktop-api";
 import "./AppClean.css";
 import { JarvisHUD } from "./JarvisHUD";
 
@@ -54,6 +54,12 @@ type LocalMicState = {
 type PendingSegment = {
   audio: Float32Array;
   inputSampleRate: number;
+};
+
+type VoiceprintEnrollState = {
+  active: boolean;
+  samplesCollected: number;
+  minRequired: number;
 };
 
 const MIC_SEGMENT_MIN_SECONDS = 0.35;
@@ -239,6 +245,12 @@ export default function App() {
   const [localTranscribeBusy, setLocalTranscribeBusy] = useState(false);
   const [voiceDetected, setVoiceDetected] = useState(false);
   const [voiceLockEnabled, setVoiceLockEnabled] = useState(true);
+  const [voiceprintStatus, setVoiceprintStatus] = useState<VoiceprintStatus | null>(null);
+  const [voiceprintEnrollState, setVoiceprintEnrollState] = useState<VoiceprintEnrollState>({
+    active: false,
+    samplesCollected: 0,
+    minRequired: 3,
+  });
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminals, setTerminals] = useState<TerminalSnapshot[]>([]);
@@ -312,6 +324,16 @@ export default function App() {
     await Promise.all([refreshServices(), refreshHealth(), refreshBackendBaseUrl()]);
   }, [refreshBackendBaseUrl, refreshHealth, refreshServices]);
 
+  const refreshVoiceprintStatus = useCallback(async () => {
+    const response = await window.desktopApi.getVoiceprintStatus(backendBaseUrl);
+    if ("error" in response) return;
+    setVoiceprintStatus(response.data);
+    setVoiceprintEnrollState((prev) => ({
+      ...prev,
+      minRequired: response.data.min_required_samples,
+    }));
+  }, [backendBaseUrl]);
+
   const addMessage = useCallback((role: ConversationRole, text: string) => {
     const payload = text.trim();
     if (!payload) return;
@@ -350,27 +372,41 @@ export default function App() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshAll();
+      void refreshVoiceprintStatus();
     }, 0);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [refreshAll]);
+  }, [refreshAll, refreshVoiceprintStatus]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       void refreshAll();
+      void refreshVoiceprintStatus();
     }, 5000);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [refreshAll]);
+  }, [refreshAll, refreshVoiceprintStatus]);
 
   const runServiceAction = async (action: () => Promise<unknown>) => {
     await action();
     await refreshAll();
   };
+
+  const handleStartOrRedoVoiceprint = useCallback(async () => {
+    const resetResponse = await window.desktopApi.resetVoiceprint(backendBaseUrl);
+    if ("error" in resetResponse) {
+      addMessage("system", `Voiceprint reset error: ${resetResponse.error}`);
+      return;
+    }
+    const minRequired = resetResponse.data.min_required_samples;
+    setVoiceprintStatus(resetResponse.data);
+    setVoiceprintEnrollState({ active: true, samplesCollected: 0, minRequired });
+    addMessage("system", `Voiceprint enrollment started. Speak ${minRequired} short samples prefixed with 'Jarvis'.`);
+  }, [addMessage, backendBaseUrl]);
 
   const suppressMicFor = useCallback((ms: number) => {
     const until = Date.now() + Math.max(0, ms);
@@ -509,6 +545,45 @@ export default function App() {
         const encodeStart = performance.now();
         const wavBytes = wavBytesFromPcm16(pcm, 16000);
         const encodedMs = performance.now() - encodeStart;
+        if (voiceprintEnrollState.active) {
+          const enrollResponse = await window.desktopApi.enrollVoiceprintSample(wavBytes, backendBaseUrl);
+          if ("error" in enrollResponse) {
+            addMessage("system", `Voiceprint enroll error: ${enrollResponse.error}`);
+            continue;
+          }
+          const { samples_collected, min_required_samples, ready_to_finalize } = enrollResponse.data;
+          setVoiceprintEnrollState({
+            active: !ready_to_finalize,
+            samplesCollected: samples_collected,
+            minRequired: min_required_samples,
+          });
+          if (ready_to_finalize) {
+            const finalizeResponse = await window.desktopApi.finalizeVoiceprint(backendBaseUrl);
+            if ("error" in finalizeResponse) {
+              addMessage("system", `Voiceprint finalize error: ${finalizeResponse.error}`);
+            } else {
+              setVoiceprintStatus(finalizeResponse.data);
+              addMessage("system", "Voiceprint setup complete. Speaker verification is now enabled.");
+            }
+          } else {
+            addMessage("system", `Voiceprint sample ${samples_collected}/${min_required_samples} saved.`);
+          }
+          continue;
+        }
+        if (voiceprintStatus?.enabled) {
+          const verifyResponse = await window.desktopApi.verifyVoiceprint(wavBytes, backendBaseUrl);
+          if ("error" in verifyResponse) {
+            addMessage("system", `Voice verification error: ${verifyResponse.error}`);
+            continue;
+          }
+          if (!verifyResponse.data.matched) {
+            logPerf("mic.voiceprint_reject", {
+              score: verifyResponse.data.score,
+              threshold: verifyResponse.data.threshold,
+            });
+            continue;
+          }
+        }
         const transcribeStart = performance.now();
         const response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
         const transcribeMs = performance.now() - transcribeStart;
@@ -554,7 +629,7 @@ export default function App() {
       setLocalTranscribeBusy(false);
       voiceWorkerActiveRef.current = false;
     }
-  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, voiceLockEnabled]);
+  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, voiceLockEnabled, voiceprintEnrollState.active, voiceprintStatus?.enabled]);
 
   const enqueueLocalSegment = useCallback((audio: Float32Array, inputSampleRate: number) => {
     if (!micOnRef.current || isMicSuppressed()) return;
@@ -916,6 +991,11 @@ export default function App() {
         <aside className={`conversation-pane ${speakModeOn ? "hidden" : ""}`}>
           <h2>Jarvis Conversation</h2>
           <p className="empty">Active chat mode: {activeBotLabel}</p>
+          <p className="empty">
+            Voiceprint: {voiceprintEnrollState.active
+              ? `enrolling ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
+              : (voiceprintStatus?.enabled ? "enabled" : "not set")}
+          </p>
           <div className="messages">
             {messages.length === 0 ? (
               <p className="empty">No conversation yet.</p>
@@ -946,6 +1026,9 @@ export default function App() {
               onClick={() => setVoiceLockEnabled((value) => !value)}
             >
               {voiceLockEnabled ? "Voice Lock" : "Voice Open"}
+            </button>
+            <button type="button" onClick={() => void handleStartOrRedoVoiceprint()}>
+              {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo Voiceprint" : "Setup Voiceprint"}
             </button>
             <button
               type="button"
