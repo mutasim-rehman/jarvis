@@ -62,6 +62,8 @@ type VoiceprintEnrollState = {
   minRequired: number;
 };
 
+type AppView = "chat" | "settings";
+
 const MIC_SEGMENT_MIN_SECONDS = 0.35;
 const MIC_SEGMENT_MAX_SECONDS = 4.5;
 const MIC_PRE_ROLL_SECONDS = 0.35;
@@ -72,6 +74,7 @@ const MIC_SEND_COOLDOWN_MS = 260;
 const MIC_DUPLICATE_WINDOW_MS = 4500;
 const PREFER_LOCAL_MIC = true;
 const WAKE_WORD_REGEX = /^(?:hey\s+|ok\s+)?jarvis[\s,.:!-]*/i;
+const VOICEPRINT_PROMPT_TEXT = "Jarvis, my voice secures this assistant.";
 
 function sanitizeVoiceCommand(rawTranscript: string, requireWakeWord: boolean): string | null {
   const cleaned = rawTranscript.trim().replace(/\s+/g, " ");
@@ -231,6 +234,7 @@ function wavBytesFromPcm16(pcm: Int16Array, sampleRate: number): Uint8Array {
 }
 
 export default function App() {
+  const [activeView, setActiveView] = useState<AppView>("chat");
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [health, setHealth] = useState<Record<"backend" | "executor", HealthResponse>>(defaultHealthMap);
   const [backendBaseUrl, setBackendBaseUrl] = useState(defaultBackendBaseUrl);
@@ -405,7 +409,11 @@ export default function App() {
     const minRequired = resetResponse.data.min_required_samples;
     setVoiceprintStatus(resetResponse.data);
     setVoiceprintEnrollState({ active: true, samplesCollected: 0, minRequired });
-    addMessage("system", `Voiceprint enrollment started. Speak ${minRequired} short samples prefixed with 'Jarvis'.`);
+    setMicOn(true);
+    addMessage(
+      "system",
+      `Voiceprint enrollment started (${minRequired} samples). Say: "${VOICEPRINT_PROMPT_TEXT}" until setup completes.`
+    );
   }, [addMessage, backendBaseUrl]);
 
   const suppressMicFor = useCallback((ms: number) => {
@@ -917,6 +925,15 @@ export default function App() {
       <div className="top-bar">
         <button
           type="button"
+          className={`icon-button ${activeView === "settings" ? "active" : ""}`}
+          aria-label="Open settings"
+          title="Settings"
+          onClick={() => setActiveView((current) => (current === "settings" ? "chat" : "settings"))}
+        >
+          <span aria-hidden="true">⚙</span>
+        </button>
+        <button
+          type="button"
           onClick={() =>
             void runServiceAction(() =>
               areAllCoreRunning ? window.desktopApi.stopAllServices() : window.desktopApi.startAllServices()
@@ -977,6 +994,28 @@ export default function App() {
         </section>
       ) : null}
 
+      {activeView === "settings" ? (
+        <section className="settings-panel">
+          <header>
+            <h3>Settings</h3>
+          </header>
+          <article className="settings-item">
+            <div>
+              <strong>Voice Print</strong>
+              <p>
+                {voiceprintEnrollState.active
+                  ? `Enrollment in progress: ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
+                  : (voiceprintStatus?.enabled ? "Voice verification enabled." : "Not enrolled yet.")}
+              </p>
+              <p className="voiceprint-prompt">Say this phrase: "{VOICEPRINT_PROMPT_TEXT}"</p>
+            </div>
+            <button type="button" onClick={() => void handleStartOrRedoVoiceprint()}>
+              {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo Voice Print" : "Start Voice Print"}
+            </button>
+          </article>
+        </section>
+      ) : null}
+
       <section className={`layout ${speakModeOn ? "layout-speak" : ""}`}>
         <div className="visual-pane">
           <div className="visual-shell">
@@ -1026,9 +1065,6 @@ export default function App() {
               onClick={() => setVoiceLockEnabled((value) => !value)}
             >
               {voiceLockEnabled ? "Voice Lock" : "Voice Open"}
-            </button>
-            <button type="button" onClick={() => void handleStartOrRedoVoiceprint()}>
-              {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo Voiceprint" : "Setup Voiceprint"}
             </button>
             <button
               type="button"
