@@ -1,6 +1,6 @@
-# Phase 4 — Controller (Mobile + Desktop)
+# Phase 4 — Controller (Mobile + Desktop + Raspberry Pi Zero 2W)
 
-**Objective:** Provide user-facing clients that share the same backend → executor pipeline: **mobile** for voice-first control and **desktop** for chat, typed commands, and monitoring.
+**Objective:** Provide user-facing clients that share the same backend → executor pipeline: **mobile** for voice-first control, **desktop** for chat/typed commands/monitoring, and **Raspberry Pi Zero 2W** as a phone-like edge controller.
 
 ## Tech stack
 
@@ -16,6 +16,16 @@
 | **Config** | [flutter_dotenv](https://pub.dev/packages/flutter_dotenv) — `BACKEND_BASE_URL`, etc. |
 | **JSON models** | [json_serializable](https://pub.dev/packages/json_serializable) / manual maps aligned with OpenAPI from backend |
 
+### Raspberry Pi Zero 2W (`controller/pi/`)
+
+| Layer | Technology |
+|--------|------------|
+| **Runtime** | Linux on Raspberry Pi Zero 2W |
+| **Controller behavior** | Same interaction model and API contract as mobile (voice/text in, backend response out) |
+| **HTTP** | Same backend REST endpoints used by mobile |
+| **Realtime (optional)** | Same WebSocket support used by mobile when enabled |
+| **Config** | Backend base URL and credentials handled similarly to mobile environment config |
+
 ### Desktop (`controller/desktop/`)
 
 | Layer | Technology |
@@ -28,7 +38,7 @@
 
 ### Shared note
 
-Backend **chat** still uses **Ollama** with **`llama3.2`** or **`llama3.3`**; controllers only send/receive HTTP JSON and never embed the LLM.
+Backend **chat** still uses **Ollama** with **`llama3.2`** or **`llama3.3`**; controllers only send/receive HTTP JSON and never embed the LLM. The Raspberry Pi layer follows the same backend contract as mobile.
 
 ## Scope
 
@@ -37,6 +47,12 @@ Backend **chat** still uses **Ollama** with **`llama3.2`** or **`llama3.3`**; co
 - **Speech → text** input; **text → speech** for responses (where useful).
 - **HTTP/WebSocket client** to backend: send utterances or text, display status and errors.
 - **Minimal UX:** connection settings (backend URL), execution feedback, permission handling for microphone.
+
+### Raspberry Pi Zero 2W
+
+- **Phone-like controller behavior:** same command flow and response handling as mobile.
+- **Same backend integration:** uses the same APIs and payload formats as mobile.
+- **Lightweight deployment:** designed for always-on edge usage with minimal UI requirements.
 
 ### Desktop (web and/or native app)
 
@@ -48,6 +64,7 @@ Backend **chat** still uses **Ollama** with **`llama3.2`** or **`llama3.3`**; co
 
 - Use **shared** schemas/types where possible (generated or hand-maintained).
 - Consistent error and loading states.
+- Keep mobile and Raspberry Pi request/response behavior equivalent.
 
 ## Out of scope (this phase)
 
@@ -58,12 +75,13 @@ Backend **chat** still uses **Ollama** with **`llama3.2`** or **`llama3.3`**; co
 
 1. **Flutter app** in `controller/mobile/` with voice loop and backend integration.
 2. **Desktop UI** in `controller/desktop/` wired to the same APIs as mobile.
-3. **README** per subfolder: build, run, env vars.
-4. **Demo path:** voice or text → same backend behavior as Phase 3.
+3. **Raspberry Pi Zero 2W controller layer** in `controller/pi/` following mobile behavior and backend contract.
+4. **README** per subfolder: build, run, env vars.
+5. **Demo path:** voice or text → same backend behavior as Phase 3.
 
 ## Success criteria
 
-- A user can trigger at least one real executor action from **both** mobile and desktop without code changes on backend/executor for each client.
+- A user can trigger at least one real executor action from **mobile**, **desktop**, and **Raspberry Pi Zero 2W** without code changes on backend/executor for each client.
 - Configuration (backend base URL) is documented and not hardcoded for production.
 
 ## Dependencies
