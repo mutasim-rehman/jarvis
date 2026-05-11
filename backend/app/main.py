@@ -42,16 +42,20 @@ def _log_executor_task_result(task: asyncio.Task) -> None:
         logger.exception("executor background task failed")
 
 
+async def _run_warmup_task(name: str, warmup_fn) -> None:
+    started = time.perf_counter()
+    try:
+        await asyncio.to_thread(warmup_fn)
+        logger.info("%s warmup completed in %.1fms", name, (time.perf_counter() - started) * 1000)
+    except Exception as exc:  # pragma: no cover - warmup depends on local model availability
+        logger.warning("%s warmup skipped: %s", name, exc)
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
-    try:
-        warmup_model()
-    except Exception as exc:  # pragma: no cover - warmup depends on local model availability
-        logger.warning("stt warmup skipped: %s", exc)
-    try:
-        warmup_tts()
-    except Exception as exc:  # pragma: no cover - warmup depends on local model availability
-        logger.warning("tts warmup skipped: %s", exc)
+    logger.info("startup: scheduling background STT/TTS warmup")
+    asyncio.create_task(_run_warmup_task("stt", warmup_model))
+    asyncio.create_task(_run_warmup_task("tts", warmup_tts))
 
 
 async def verify_dev_api_key(
