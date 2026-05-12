@@ -24,7 +24,15 @@ _classifier = None
 _STORE_DIR = Path(__file__).resolve().parents[1] / "data" / "voiceprint"
 _PROFILE_PATH = _STORE_DIR / "profile.json"
 _PENDING_PATH = _STORE_DIR / "pending.json"
-_MIN_ENROLL_SAMPLES = 3
+# Distinct phrases improve phonetic coverage and make a single replay clip less useful.
+_ENROLLMENT_PHRASES: tuple[str, ...] = (
+    "Jarvis, my voice secures this assistant.",
+    "Open the calendar, dim the lights, and play soft jazz.",
+    "The quick brown fox jumps over the lazy dog at midnight.",
+    "I prefer warm coffee, fresh bread, and quiet mornings.",
+    "Route nine twenty-one to the airport, please.",
+)
+_MIN_ENROLL_SAMPLES = len(_ENROLLMENT_PHRASES)
 _VERIFY_THRESHOLD = 0.72
 
 
@@ -98,20 +106,34 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 def get_voiceprint_status() -> dict:
     profile = _read_json(_PROFILE_PATH)
+    enabled = bool(profile.get("embedding"))
     pending = _read_json(_PENDING_PATH)
+    embeddings = pending.get("embeddings") or []
+    collected = len(embeddings) if embeddings else int(pending.get("samples_collected", 0))
+    phrases = list(_ENROLLMENT_PHRASES)
+    next_phrase = ""
+    if (
+        not enabled
+        and _PENDING_PATH.exists()
+        and collected < _MIN_ENROLL_SAMPLES
+        and phrases
+    ):
+        idx = min(collected, len(phrases) - 1)
+        next_phrase = phrases[idx]
     return {
-        "enabled": bool(profile.get("embedding")),
-        "samples_collected": int(pending.get("samples_collected", 0)),
+        "enabled": enabled,
+        "samples_collected": collected,
         "min_required_samples": _MIN_ENROLL_SAMPLES,
         "threshold": float(profile.get("threshold", _VERIFY_THRESHOLD)),
+        "enrollment_phrases": phrases,
+        "next_enrollment_phrase": next_phrase,
     }
 
 
 def reset_voiceprint() -> dict:
     if _PROFILE_PATH.exists():
         _PROFILE_PATH.unlink()
-    if _PENDING_PATH.exists():
-        _PENDING_PATH.unlink()
+    _write_json(_PENDING_PATH, {"samples_collected": 0, "embeddings": []})
     return get_voiceprint_status()
 
 
@@ -126,10 +148,18 @@ def enroll_voiceprint_sample(audio_bytes: bytes) -> dict:
         "embeddings": embeddings,
     }
     _write_json(_PENDING_PATH, payload)
+    n = len(embeddings)
+    phrases = list(_ENROLLMENT_PHRASES)
+    next_phrase = ""
+    if n < _MIN_ENROLL_SAMPLES and phrases:
+        idx = min(n, len(phrases) - 1)
+        next_phrase = phrases[idx]
     return {
-        "samples_collected": len(embeddings),
+        "samples_collected": n,
         "min_required_samples": _MIN_ENROLL_SAMPLES,
-        "ready_to_finalize": len(embeddings) >= _MIN_ENROLL_SAMPLES,
+        "ready_to_finalize": n >= _MIN_ENROLL_SAMPLES,
+        "enrollment_phrases": phrases,
+        "next_enrollment_phrase": next_phrase,
     }
 
 

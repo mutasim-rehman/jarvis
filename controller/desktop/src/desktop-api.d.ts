@@ -54,6 +54,8 @@ export interface VoiceprintStatus {
   samples_collected: number;
   min_required_samples: number;
   threshold: number;
+  enrollment_phrases: string[];
+  next_enrollment_phrase: string;
 }
 
 export interface VoiceprintVerifyResult {
@@ -93,7 +95,16 @@ interface DesktopApi {
     wavBytes: Uint8Array,
     baseUrl: string,
   ) => Promise<
-    | { ok: true; data: { samples_collected: number; min_required_samples: number; ready_to_finalize: boolean } }
+    | {
+        ok: true;
+        data: {
+          samples_collected: number;
+          min_required_samples: number;
+          ready_to_finalize: boolean;
+          enrollment_phrases: string[];
+          next_enrollment_phrase: string;
+        };
+      }
     | { ok: false; error: string }
   >;
   finalizeVoiceprint: (baseUrl: string) => Promise<{ ok: true; data: VoiceprintStatus } | { ok: false; error: string }>;

@@ -60,6 +60,7 @@ type VoiceprintEnrollState = {
   active: boolean;
   samplesCollected: number;
   minRequired: number;
+  enrollmentPhrases: string[];
 };
 
 type AppView = "chat" | "settings";
@@ -74,7 +75,13 @@ const MIC_SEND_COOLDOWN_MS = 260;
 const MIC_DUPLICATE_WINDOW_MS = 4500;
 const PREFER_LOCAL_MIC = true;
 const WAKE_WORD_REGEX = /^(?:hey\s+|ok\s+)?jarvis[\s,.:!-]*/i;
-const VOICEPRINT_PROMPT_TEXT = "Jarvis, my voice secures this assistant.";
+
+function voiceprintEnrollmentPrompt(state: VoiceprintEnrollState): string | null {
+  if (!state.active || state.enrollmentPhrases.length === 0) return null;
+  if (state.samplesCollected >= state.minRequired) return null;
+  const idx = Math.min(state.samplesCollected, state.enrollmentPhrases.length - 1);
+  return state.enrollmentPhrases[idx] ?? null;
+}
 
 function sanitizeVoiceCommand(rawTranscript: string, requireWakeWord: boolean): string | null {
   const cleaned = rawTranscript.trim().replace(/\s+/g, " ");
@@ -253,7 +260,8 @@ export default function App() {
   const [voiceprintEnrollState, setVoiceprintEnrollState] = useState<VoiceprintEnrollState>({
     active: false,
     samplesCollected: 0,
-    minRequired: 3,
+    minRequired: 5,
+    enrollmentPhrases: [],
   });
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
@@ -332,10 +340,24 @@ export default function App() {
     const response = await window.desktopApi.getVoiceprintStatus(backendBaseUrl);
     if ("error" in response) return;
     setVoiceprintStatus(response.data);
-    setVoiceprintEnrollState((prev) => ({
-      ...prev,
-      minRequired: response.data.min_required_samples,
-    }));
+    const d = response.data;
+    const partial =
+      !d.enabled && d.samples_collected > 0 && d.samples_collected < d.min_required_samples;
+    setVoiceprintEnrollState((prev) => {
+      if (partial) {
+        return {
+          active: true,
+          samplesCollected: d.samples_collected,
+          minRequired: d.min_required_samples,
+          enrollmentPhrases: d.enrollment_phrases?.length ? d.enrollment_phrases : prev.enrollmentPhrases,
+        };
+      }
+      return {
+        ...prev,
+        minRequired: d.min_required_samples,
+        enrollmentPhrases: d.enrollment_phrases?.length ? d.enrollment_phrases : prev.enrollmentPhrases,
+      };
+    });
   }, [backendBaseUrl]);
 
   const addMessage = useCallback((role: ConversationRole, text: string) => {
@@ -407,12 +429,14 @@ export default function App() {
       return;
     }
     const minRequired = resetResponse.data.min_required_samples;
+    const enrollmentPhrases = resetResponse.data.enrollment_phrases ?? [];
+    const first = enrollmentPhrases[0] ?? "";
     setVoiceprintStatus(resetResponse.data);
-    setVoiceprintEnrollState({ active: true, samplesCollected: 0, minRequired });
+    setVoiceprintEnrollState({ active: true, samplesCollected: 0, minRequired, enrollmentPhrases });
     setMicOn(true);
     addMessage(
       "system",
-      `Voiceprint enrollment started (${minRequired} samples). Say: "${VOICEPRINT_PROMPT_TEXT}" until setup completes.`
+      `Voiceprint enrollment started: ${minRequired} different phrases (better coverage than one repeated line). First phrase: "${first}"`,
     );
   }, [addMessage, backendBaseUrl]);
 
@@ -559,12 +583,19 @@ export default function App() {
             addMessage("system", `Voiceprint enroll error: ${enrollResponse.error}`);
             continue;
           }
-          const { samples_collected, min_required_samples, ready_to_finalize } = enrollResponse.data;
-          setVoiceprintEnrollState({
+          const {
+            samples_collected,
+            min_required_samples,
+            ready_to_finalize,
+            enrollment_phrases,
+            next_enrollment_phrase,
+          } = enrollResponse.data;
+          setVoiceprintEnrollState((prev) => ({
             active: !ready_to_finalize,
             samplesCollected: samples_collected,
             minRequired: min_required_samples,
-          });
+            enrollmentPhrases: enrollment_phrases?.length ? enrollment_phrases : prev.enrollmentPhrases,
+          }));
           if (ready_to_finalize) {
             const finalizeResponse = await window.desktopApi.finalizeVoiceprint(backendBaseUrl);
             if ("error" in finalizeResponse) {
@@ -574,7 +605,11 @@ export default function App() {
               addMessage("system", "Voiceprint setup complete. Speaker verification is now enabled.");
             }
           } else {
-            addMessage("system", `Voiceprint sample ${samples_collected}/${min_required_samples} saved.`);
+            const nextHint = next_enrollment_phrase ? ` Next: "${next_enrollment_phrase}"` : "";
+            addMessage(
+              "system",
+              `Voiceprint phrase ${samples_collected}/${min_required_samples} saved.${nextHint}`,
+            );
           }
           continue;
         }
@@ -1007,7 +1042,21 @@ export default function App() {
                   ? `Enrollment in progress: ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
                   : (voiceprintStatus?.enabled ? "Voice verification enabled." : "Not enrolled yet.")}
               </p>
-              <p className="voiceprint-prompt">Say this phrase: "{VOICEPRINT_PROMPT_TEXT}"</p>
+              <p className="voiceprint-prompt">
+                {voiceprintEnrollState.active ? (
+                  <>
+                    Phrase {Math.min(voiceprintEnrollState.samplesCollected + 1, voiceprintEnrollState.minRequired)} of{" "}
+                    {voiceprintEnrollState.minRequired}: <q>{voiceprintEnrollmentPrompt(voiceprintEnrollState) ?? "…"}</q>
+                  </>
+                ) : voiceprintStatus?.enabled ? (
+                  <>Each command segment is checked against your voice. Speak naturally; no fixed passphrase is required.</>
+                ) : (
+                  <>
+                    Enrollment records {voiceprintStatus?.min_required_samples ?? "several"} different phrases so the
+                    model hears varied sounds—not one replayable line.
+                  </>
+                )}
+              </p>
             </div>
             <button type="button" onClick={() => void handleStartOrRedoVoiceprint()}>
               {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo Voice Print" : "Start Voice Print"}
