@@ -1,7 +1,7 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
 const net = require("node:net");
-const { spawn } = require("node:child_process");
+const { spawn, execSync } = require("node:child_process");
 const os = require("node:os");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
@@ -74,6 +74,39 @@ async function resolveCursorTerminalsDir() {
   }
 
   throw new Error(`Unable to locate Cursor terminals directory under ${cursorProjectsDir}`);
+}
+
+/** @type {string | null} */
+let cachedPythonCommand = null;
+
+function getPythonCommand() {
+  if (cachedPythonCommand) {
+    return cachedPythonCommand;
+  }
+  const candidates = ["py", "python", "python3"];
+  for (const cmd of candidates) {
+    try {
+      execSync(`${cmd} --version`, {
+        cwd: repoRoot,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 8000,
+      });
+      cachedPythonCommand = cmd;
+      return cachedPythonCommand;
+    } catch {
+      // try next candidate
+    }
+  }
+  cachedPythonCommand = "py";
+  return cachedPythonCommand;
+}
+
+function syncServicePythonCommands() {
+  const cmd = getPythonCommand();
+  for (const serviceId of Object.keys(serviceConfigs)) {
+    serviceConfigs[serviceId].command = cmd;
+  }
 }
 
 /** @type {Record<string, {id: string, name: string, command: string, args: string[], env: Record<string, string>, healthUrl?: string}>} */
@@ -313,6 +346,7 @@ async function startService(serviceId) {
     return serviceStatus(serviceId);
   }
 
+  syncServicePythonCommands();
   const runtime = await resolveRuntimeForService(serviceId);
   const child = spawn(config.command, runtime.args, {
     cwd: repoRoot,
@@ -321,6 +355,7 @@ async function startService(serviceId) {
       ...config.env,
     },
     windowsHide: true,
+    shell: true,
   });
   runningProcesses.set(serviceId, { child, startedAt: Date.now() });
   appendLog(serviceId, `[start] ${commandText(config)}`);
@@ -584,8 +619,16 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
+
+  try {
+    await startService("backend");
+    await startService("executor");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[electron] auto-start backend/executor failed: ${message}`);
+  }
 
   app.on("activate", () => {
     if (!mainWindow || mainWindow.isDestroyed()) {

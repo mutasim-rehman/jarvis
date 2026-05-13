@@ -18,6 +18,8 @@ def test_health():
     data = response.json()
     assert data["status"] == "ok"
     assert data["schema_version"] == SCHEMA_VERSION
+    assert isinstance(data["stt_ready"], bool)
+    assert isinstance(data["tts_ready"], bool)
 
 
 def test_parse_api_mock(monkeypatch):

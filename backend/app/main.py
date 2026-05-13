@@ -33,6 +33,9 @@ app = FastAPI(
 )
 logger = logging.getLogger(__name__)
 
+_stt_ready: bool = False
+_tts_ready: bool = False
+
 
 def _log_executor_task_result(task: asyncio.Task) -> None:
     try:
@@ -43,10 +46,15 @@ def _log_executor_task_result(task: asyncio.Task) -> None:
 
 
 async def _run_warmup_task(name: str, warmup_fn) -> None:
+    global _stt_ready, _tts_ready
     started = time.perf_counter()
     try:
         await asyncio.to_thread(warmup_fn)
         logger.info("%s warmup completed in %.1fms", name, (time.perf_counter() - started) * 1000)
+        if name == "stt":
+            _stt_ready = True
+        elif name == "tts":
+            _tts_ready = True
     except Exception as exc:  # pragma: no cover - warmup depends on local model availability
         logger.warning("%s warmup skipped: %s", name, exc)
 
@@ -69,7 +77,12 @@ async def verify_dev_api_key(
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "schema_version": SCHEMA_VERSION}
+    return {
+        "status": "ok",
+        "schema_version": SCHEMA_VERSION,
+        "stt_ready": _stt_ready,
+        "tts_ready": _tts_ready,
+    }
 
 
 @app.post("/api/parse", response_model=ParseResponse)

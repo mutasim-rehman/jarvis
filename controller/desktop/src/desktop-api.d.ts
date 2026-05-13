@@ -13,7 +13,11 @@ export interface ServiceStatus {
 export interface HealthResponse {
   ok: boolean;
   status: number;
-  data?: unknown;
+  data?: {
+    stt_ready?: boolean;
+    tts_ready?: boolean;
+    [key: string]: unknown;
+  };
   error?: string;
 }
 

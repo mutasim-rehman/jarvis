@@ -395,6 +395,33 @@ export default function App() {
     return "Not listening";
   }, [chatLongRunning, voiceDetected, voiceStatus]);
 
+  const backendHealthPayload = useMemo(() => {
+    const payload = health.backend.data;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return null;
+    }
+    return payload as { stt_ready?: boolean; tts_ready?: boolean };
+  }, [health.backend.data]);
+
+  const jarvisFullyReady = useMemo(
+    () =>
+      health.backend.ok &&
+      health.executor.ok &&
+      backendHealthPayload?.stt_ready === true &&
+      backendHealthPayload?.tts_ready === true,
+    [backendHealthPayload, health.backend.ok, health.executor.ok],
+  );
+
+  const backendBadge = useMemo(() => {
+    if (!health.backend.ok) {
+      return { className: "error" as const, label: "Offline" };
+    }
+    if (backendHealthPayload?.stt_ready === true && backendHealthPayload?.tts_ready === true) {
+      return { className: "ok" as const, label: "Online" };
+    }
+    return { className: "warn" as const, label: "Warming up…" };
+  }, [backendHealthPayload, health.backend.ok]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshAll();
@@ -410,12 +437,12 @@ export default function App() {
     const interval = window.setInterval(() => {
       void refreshAll();
       void refreshVoiceprintStatus();
-    }, 5000);
+    }, jarvisFullyReady ? 5000 : 1000);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [refreshAll, refreshVoiceprintStatus]);
+  }, [jarvisFullyReady, refreshAll, refreshVoiceprintStatus]);
 
   const runServiceAction = async (action: () => Promise<unknown>) => {
     await action();
@@ -949,6 +976,7 @@ export default function App() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!health.backend.ok) return;
     const text = chatInput.trim();
     if (!text) return;
     setChatInput("");
@@ -997,8 +1025,8 @@ export default function App() {
         <button type="button" onClick={cycleBotMode}>
           {activeBotLabel}
         </button>
-        <span className={`badge ${health.backend.ok ? "ok" : "error"}`}>
-          Backend: {health.backend.ok ? "Online" : "Offline"}
+        <span className={`badge ${backendBadge.className}`}>
+          Backend: {backendBadge.label}
         </span>
         <span className={`badge ${health.executor.ok ? "ok" : "error"}`}>
           Executor: {health.executor.ok ? "Online" : "Offline"}
@@ -1100,12 +1128,18 @@ export default function App() {
             <input
               placeholder="Enter command..."
               value={chatInput}
+              disabled={!health.backend.ok}
               onChange={(e) => setChatInput(e.target.value)}
             />
-            <button type="submit" disabled={!chatInput.trim()}>
+            <button type="submit" disabled={!chatInput.trim() || !health.backend.ok}>
               {inFlightChatCount > 0 ? "Sending..." : "Send"}
             </button>
-            <button type="button" className={micOn ? "active" : ""} onClick={() => setMicOn((value) => !value)}>
+            <button
+              type="button"
+              className={micOn ? "active" : ""}
+              disabled={!health.backend.ok}
+              onClick={() => setMicOn((value) => !value)}
+            >
               {micOn ? "Mic On" : "Mic"}
             </button>
             <button
@@ -1140,6 +1174,7 @@ export default function App() {
           <button
             type="button"
             className={micOn ? "active" : ""}
+            disabled={!health.backend.ok}
             onClick={() => setMicOn((value) => !value)}
           >
             {micOn ? "Mic On" : "Mic Off"}
