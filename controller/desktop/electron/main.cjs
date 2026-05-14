@@ -355,7 +355,7 @@ async function startService(serviceId) {
       ...config.env,
     },
     windowsHide: true,
-    shell: true,
+    shell: false,
   });
   runningProcesses.set(serviceId, { child, startedAt: Date.now() });
   appendLog(serviceId, `[start] ${commandText(config)}`);
@@ -404,6 +404,25 @@ async function checkHealth(serviceId) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return { ok: false, status: 0, error: message };
   }
+}
+
+const apiHealthServiceIds = ["backend", "executor"];
+
+async function waitForHealthyApi(serviceId, timeoutMs = 60000) {
+  const startedAt = Date.now();
+  let lastError = "unknown";
+  while (Date.now() - startedAt < timeoutMs) {
+    const health = await checkHealth(serviceId);
+    if (health.ok) {
+      return null;
+    }
+    lastError = health.error || `HTTP ${health.status}`;
+    await new Promise((resolve) => {
+      setTimeout(resolve, 400);
+    });
+  }
+  const label = serviceConfigs[serviceId]?.name || serviceId;
+  return `${label} did not become healthy within ${Math.round(timeoutMs / 1000)}s (${lastError}). Check service logs.`;
 }
 
 async function callInteract(text, baseUrl, chatProvider) {
@@ -665,14 +684,37 @@ function getServiceBaseUrl(serviceId) {
 }
 
 ipcMain.handle("services:list", async () => listServiceStatuses());
-ipcMain.handle("services:start", async (_event, serviceId) => startService(serviceId));
+ipcMain.handle("services:start", async (_event, serviceId) => {
+  try {
+    return await startService(serviceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendLog(serviceId, `[start-failed] ${message}`);
+    throw error;
+  }
+});
 ipcMain.handle("services:stop", async (_event, serviceId) => stopService(serviceId));
 ipcMain.handle("services:start-all", async () => {
+  /** @type {string[]} */
+  const errors = [];
   for (const serviceId of Object.keys(serviceConfigs)) {
-    // start each service in order so port fallback logs stay readable.
-    await startService(serviceId);
+    try {
+      await startService(serviceId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${serviceId}: ${message}`);
+      appendLog(serviceId, `[start-failed] ${message}`);
+    }
   }
-  return listServiceStatuses();
+  await Promise.all(
+    apiHealthServiceIds.map(async (serviceId) => {
+      const message = await waitForHealthyApi(serviceId, 60000);
+      if (message) {
+        errors.push(message);
+      }
+    })
+  );
+  return { services: listServiceStatuses(), errors };
 });
 ipcMain.handle("services:stop-all", async () => {
   for (const serviceId of Object.keys(serviceConfigs)) {

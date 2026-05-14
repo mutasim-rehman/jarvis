@@ -188,7 +188,7 @@ async def transcribe_audio(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     elapsed_ms = (time.perf_counter() - started) * 1000
-    provider = (settings.stt_provider or "unknown").strip().lower()
+    provider = (settings.stt_provider or "faster_whisper").strip().lower()
     logger.info(
         "transcribe timing provider=%s total_ms=%.1f bytes=%d chars=%d",
         provider,
@@ -227,8 +227,6 @@ async def synthesize_tts(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     selected_voice = request.voice
-    if not selected_voice and settings.tts_provider.lower() == "kokoro":
-        selected_voice = settings.tts_kokoro_voice
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     logger.info(

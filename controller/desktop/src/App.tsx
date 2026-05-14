@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HealthResponse, ServiceId, ServiceStatus, TerminalSnapshot, VoiceprintStatus } from "./desktop-api";
+import type {
+  HealthResponse,
+  ServiceId,
+  ServiceLogEvent,
+  ServiceStatus,
+  TerminalSnapshot,
+  VoiceprintStatus,
+} from "./desktop-api";
 import "./AppClean.css";
 import { JarvisHUD } from "./JarvisHUD";
 
 const healthServiceIds: ServiceId[] = ["backend", "executor"];
-const coreServiceIds: ServiceId[] = ["backend", "executor", "cli"];
+const coreServiceIds: ServiceId[] = ["backend", "executor"];
 const defaultBackendBaseUrl = "http://127.0.0.1:8000";
 
 type ConversationRole = "user" | "assistant" | "system";
@@ -266,6 +273,8 @@ export default function App() {
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminals, setTerminals] = useState<TerminalSnapshot[]>([]);
+  const [serviceLogsOpen, setServiceLogsOpen] = useState(false);
+  const [serviceLogEvents, setServiceLogEvents] = useState<ServiceLogEvent[]>([]);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const micOnRef = useRef(false);
   const micNetworkIssueNotifiedRef = useRef(false);
@@ -280,6 +289,9 @@ export default function App() {
   const lastTranscriptAtRef = useRef(0);
   const micSuppressUntilRef = useRef(0);
   const perfEnabledRef = useRef(true);
+  const ttsAudioContextRef = useRef<AudioContext | null>(null);
+  const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const pollBackoffRef = useRef(0);
 
   const servicesById = useMemo(
     () => services.reduce<Record<string, ServiceStatus>>((acc, service) => {
@@ -423,24 +435,34 @@ export default function App() {
   }, [backendHealthPayload, health.backend.ok]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void refreshAll();
-      void refreshVoiceprintStatus();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [refreshAll, refreshVoiceprintStatus]);
+    return window.desktopApi.onServiceLog((payload) => {
+      setServiceLogEvents((prev) => [...prev.slice(-240), payload]);
+    });
+  }, []);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void refreshAll();
-      void refreshVoiceprintStatus();
-    }, jarvisFullyReady ? 5000 : 1000);
+    let timeoutId = 0;
+    let cancelled = false;
 
+    const runTick = async () => {
+      if (cancelled) return;
+      await refreshAll();
+      if (cancelled) return;
+      const voiceEveryOther = pollBackoffRef.current % 2 === 0;
+      pollBackoffRef.current += 1;
+      if (voiceEveryOther) {
+        void refreshVoiceprintStatus();
+      }
+      const baseMs = jarvisFullyReady ? 5000 : 2500;
+      timeoutId = window.setTimeout(() => {
+        void runTick();
+      }, baseMs);
+    };
+
+    void runTick();
     return () => {
-      window.clearInterval(interval);
+      cancelled = true;
+      window.clearTimeout(timeoutId);
     };
   }, [jarvisFullyReady, refreshAll, refreshVoiceprintStatus]);
 
@@ -474,32 +496,70 @@ export default function App() {
 
   const isMicSuppressed = useCallback(() => Date.now() < micSuppressUntilRef.current, []);
 
-  const speakAssistant = useCallback((text: string) => {
-    const cleanText = text.trim();
-    if (!cleanText || !("speechSynthesis" in window)) return;
-    const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
-    // Pre-emptively suppress transcription for the expected TTS playback duration.
-    suppressMicFor(Math.min(18000, Math.max(1200, wordCount * 340 + 900)));
-    setAssistantSpeaking(false);
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.02;
-    utterance.pitch = 1.0;
-    utterance.lang = "en-US";
-    utterance.onstart = () => {
-      setAssistantSpeaking(true);
-      suppressMicFor(1200);
-    };
-    utterance.onend = () => {
-      setAssistantSpeaking(false);
-      suppressMicFor(850);
-    };
-    utterance.onerror = () => {
-      setAssistantSpeaking(false);
-      suppressMicFor(650);
-    };
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }, [suppressMicFor]);
+  const speakAssistant = useCallback(
+    async (text: string) => {
+      const cleanText = text.trim();
+      if (!cleanText) return;
+      const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
+      const fallbackMs = Math.min(18000, Math.max(1200, wordCount * 340 + 900));
+      suppressMicFor(fallbackMs);
+      try {
+        const result = await window.desktopApi.synthesizeSpeech(cleanText, backendBaseUrl);
+        if ("error" in result) {
+          addMessage("system", `TTS unavailable: ${result.error}`);
+          setAssistantSpeaking(false);
+          return;
+        }
+        const b64 = result.data.audio_base64;
+        if (!b64) {
+          addMessage("system", "TTS returned no audio.");
+          setAssistantSpeaking(false);
+          return;
+        }
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        let ctx = ttsAudioContextRef.current;
+        if (!ctx || ctx.state === "closed") {
+          ctx = new AudioContext();
+          ttsAudioContextRef.current = ctx;
+        }
+        if (ttsSourceRef.current) {
+          try {
+            ttsSourceRef.current.stop();
+          } catch {
+            /* ended */
+          }
+          ttsSourceRef.current = null;
+        }
+        const buffer = await ctx.decodeAudioData(copy);
+        const durationMs = Math.ceil(buffer.duration * 1000);
+        suppressMicFor(durationMs + 1400);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.onended = () => {
+          setAssistantSpeaking(false);
+          suppressMicFor(850);
+          ttsSourceRef.current = null;
+        };
+        setAssistantSpeaking(false);
+        await ctx.resume();
+        setAssistantSpeaking(true);
+        suppressMicFor(1200);
+        source.start(0);
+        ttsSourceRef.current = source;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "playback failed";
+        addMessage("system", `TTS playback error: ${msg}`);
+        setAssistantSpeaking(false);
+      }
+    },
+    [addMessage, backendBaseUrl, suppressMicFor],
+  );
 
   const sendText = useCallback(async function sendTextImpl(
     raw: string,
@@ -540,7 +600,7 @@ export default function App() {
         return;
       }
       if (speakModeOn) {
-        speakAssistant(reply);
+        void speakAssistant(reply);
       }
       logPerf("chat.interact", {
         provider,
@@ -957,9 +1017,16 @@ export default function App() {
   useEffect(() => () => {
     stopMicRecognition();
     stopLocalMicCapture();
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+    if (ttsSourceRef.current) {
+      try {
+        ttsSourceRef.current.stop();
+      } catch {
+        /* ended */
+      }
+      ttsSourceRef.current = null;
     }
+    void ttsAudioContextRef.current?.close();
+    ttsAudioContextRef.current = null;
     setAssistantSpeaking(false);
   }, [stopLocalMicCapture, stopMicRecognition]);
 
@@ -998,9 +1065,16 @@ export default function App() {
         <button
           type="button"
           onClick={() =>
-            void runServiceAction(() =>
-              areAllCoreRunning ? window.desktopApi.stopAllServices() : window.desktopApi.startAllServices()
-            )
+            void runServiceAction(async () => {
+              if (areAllCoreRunning) {
+                await window.desktopApi.stopAllServices();
+                return;
+              }
+              const started = await window.desktopApi.startAllServices();
+              for (const err of started.errors) {
+                addMessage("system", err);
+              }
+            })
           }
         >
           {areAllCoreRunning ? "Stop Jarvis" : "Start Jarvis"}
@@ -1018,6 +1092,14 @@ export default function App() {
           }}
         >
           Terminals
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setServiceLogsOpen((value) => !value);
+          }}
+        >
+          Logs
         </button>
         <button type="button" onClick={() => void window.desktopApi.openDevTools()}>
           DevTools
@@ -1051,6 +1133,29 @@ export default function App() {
                   <span>{terminal.cwd || "(cwd unavailable)"}</span>
                   <code>{terminal.activeCommand || terminal.lastCommand || "(no command recorded)"}</code>
                 </article>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {serviceLogsOpen ? (
+        <section className="service-logs-panel">
+          <header>
+            <h3>Service logs</h3>
+            <button type="button" onClick={() => setServiceLogEvents([])}>
+              Clear
+            </button>
+          </header>
+          <div className="service-log-lines">
+            {serviceLogEvents.length === 0 ? (
+              <p className="terminal-empty">No log lines yet. Start services or watch for output.</p>
+            ) : (
+              serviceLogEvents.map((entry, idx) => (
+                <div key={`${entry.serviceId}-${idx}-${entry.line.slice(0, 24)}`} className="service-log-line">
+                  <span className="service-log-id">{entry.serviceId}</span>
+                  <code>{entry.line}</code>
+                </div>
               ))
             )}
           </div>

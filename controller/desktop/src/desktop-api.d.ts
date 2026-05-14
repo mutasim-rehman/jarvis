@@ -73,7 +73,7 @@ interface DesktopApi {
   listServices: () => Promise<ServiceStatus[]>;
   startService: (serviceId: ServiceId) => Promise<ServiceStatus>;
   stopService: (serviceId: ServiceId) => Promise<ServiceStatus>;
-  startAllServices: () => Promise<ServiceStatus[]>;
+  startAllServices: () => Promise<{ services: ServiceStatus[]; errors: string[] }>;
   stopAllServices: () => Promise<ServiceStatus[]>;
   checkServiceHealth: (serviceId: ServiceId) => Promise<HealthResponse>;
   getServiceBaseUrl: (serviceId: ServiceId) => Promise<string>;

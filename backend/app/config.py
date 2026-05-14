@@ -29,13 +29,8 @@ class Settings(BaseSettings):
     executor_timeout_seconds: float = 120.0
     executor_inline_wait_seconds: float = 0.25
 
-    # Speech-to-text provider selection
-    stt_provider: str = "vosk"
-
-    # Local offline speech-to-text (Vosk)
-    stt_model_path: str = "backend/models/vosk-model-small-en-us-0.15"
-
-    # Local speech-to-text (faster-whisper)
+    # Speech-to-text (faster-whisper only)
+    stt_provider: str = "faster_whisper"
     stt_whisper_model_size: str = "small"
     stt_whisper_model_path: str = ""
     stt_whisper_device: str = "auto"
@@ -44,19 +39,13 @@ class Settings(BaseSettings):
     stt_whisper_language: str = "en"
     stt_whisper_vad_filter: bool = True
 
-    # Text-to-speech provider selection
-    tts_provider: str = "kokoro"
+    # Text-to-speech (Piper only)
+    tts_provider: str = "piper"
     voice_streaming_enabled: bool = True
     tts_stream_chunk_chars: int = 140
-
-    # Local text-to-speech (Kokoro)
-    tts_kokoro_model_path: str = "backend/models/Kokoro-82M"
-    tts_kokoro_voice: str = "bm_george"
-    tts_kokoro_lang_code: str = "b"
-    tts_sample_rate: int = 24000
+    tts_sample_rate: int = 22050
     tts_speed: float = 0.9
 
-    # Local text-to-speech (Piper)
     tts_piper_model_path: str = "backend/models/piper/en_US-lessac-medium.onnx"
     tts_piper_config_path: str = ""
     tts_piper_executable: str = "piper"

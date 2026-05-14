@@ -4,15 +4,15 @@ Electron + React desktop app that hides manual terminal setup and runs Jarvis se
 
 ## What it does
 
-- Starts and stops the three core processes:
+- Starts and stops the API services plus the optional CLI tester:
   - `py -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000`
   - `py -m uvicorn executor.app.main:app --host 127.0.0.1 --port 8001`
-  - `py backend/cli.py`
+  - `py backend/cli.py` (interactive REPL; not required for chat or health badges)
 - Sets `PYTHONPATH` to the repository root for each launched process.
-- Streams process logs into the app.
+- Streams process logs into the app (service log panel).
 - Shows backend and executor health checks.
 - Provides a chat console that calls backend `/api/interact`.
-- Uses backend `/api/tts` for Kokoro-82M voice output (with browser TTS fallback if unavailable).
+- Uses backend `/api/tts` (Piper) for speak-mode assistant playback.
 
 ## Prerequisites
 
@@ -25,38 +25,17 @@ py -m pip install -r backend/requirements.txt
 py -m pip install -r executor/requirements.txt
 ```
 
-### Offline speech-to-text model (Vosk)
+### Offline speech-to-text (faster-whisper)
 
-The desktop app records microphone audio locally and sends WAV to backend `/api/transcribe`.
-For offline transcription, download and extract an English Vosk model to:
+The desktop app records microphone audio locally and sends WAV to backend `/api/transcribe`. The backend uses **faster-whisper**; the first run downloads the configured model (default size `small`). Override with `STT_WHISPER_MODEL_SIZE` or `STT_WHISPER_MODEL_PATH` in `.env`.
 
-`backend/models/vosk-model-small-en-us-0.15`
+### Text-to-speech (Piper)
 
-You can change this path with `STT_MODEL_PATH` in `.env`.
+Place a Piper `.onnx` voice and optional `.onnx.json` next to each other. Default path in backend config:
 
-### Voice model attribution
+`backend/models/piper/en_US-lessac-medium.onnx`
 
-- Selected Jarvis voice model source: [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
-- Local clone path: `backend/models/Kokoro-82M`
-- Credit: thanks to the Kokoro model authors/maintainers for the open release.
-
-### Kokoro setup notes
-
-- Install backend dependencies (includes `kokoro`):
-
-```powershell
-py -m pip install -r backend/requirements.txt
-```
-
-- Ensure model weights are present in your local clone:
-
-```powershell
-cd backend/models/Kokoro-82M
-git lfs pull
-```
-
-- On Windows/Linux, Kokoro may require `espeak-ng` to be installed and available on PATH.
-- Kokoro runtime currently requires **Python 3.12 or lower**. If your main env is Python 3.13, run backend in a Python 3.12 environment for Kokoro voice.
+Override with `TTS_PIPER_MODEL_PATH` / `TTS_PIPER_CONFIG_PATH` in `.env` if needed.
 
 ## Run in development
 
