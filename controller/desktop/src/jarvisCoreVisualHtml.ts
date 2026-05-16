@@ -9,28 +9,26 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
     body { background: #050505; overflow: hidden; }
     canvas { display: block; }
     .hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
-    .scan-overlay {
-      position: absolute; inset: 0;
-      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 80, 0, 0.015) 2px, rgba(255, 80, 0, 0.015) 4px);
-    }
+    .scan-overlay { display: none; }
     @keyframes pulseRing {
-      0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.4; }
-      100% { transform: translate(-50%, -50%) scale(1.15); opacity: 0; }
+      0% { transform: translate(-50%, -50%) scale(0.92); opacity: 0.12; }
+      100% { transform: translate(-50%, -50%) scale(1.06); opacity: 0; }
     }
     .pulse-ring-container {
       position: absolute;
       top: 0; left: 0; width: 100%; height: 100%;
       pointer-events: none;
+      opacity: 0.35;
     }
     .pulse-ring {
       position: absolute; top: 50%; left: 50%;
       width: 104px; height: 104px; border-radius: 50%;
-      border: 1px solid #ff660055;
-      animation: pulseRing 3s ease-out infinite;
+      border: 1px solid rgba(200, 160, 90, 0.18);
+      animation: pulseRing 8s ease-out infinite;
       pointer-events: none;
     }
-    .pulse-ring:nth-child(2) { animation-delay: 1s; width: 143px; height: 143px; border-color: #ff440033; }
-    .pulse-ring:nth-child(3) { animation-delay: 2s; width: 181px; height: 181px; border-color: #ff220022; }
+    .pulse-ring:nth-child(2) { animation-delay: 2.6s; width: 143px; height: 143px; border-color: rgba(180, 140, 80, 0.12); }
+    .pulse-ring:nth-child(3) { animation-delay: 5.2s; width: 181px; height: 181px; border-color: rgba(160, 120, 70, 0.08); }
   </style>
 </head>
 <body>
@@ -62,19 +60,18 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   const PX = -3.4; // Default horizontal position
   const PX_SPEAK_HIDDEN = 0.0; // Center position when speak mode is active and conversation is hidden
   const PX_SMOOTHING = 0.08;
-  const BASE_SPEED_MULTIPLIER = 3.3;
+  const BASE_SPEED_MULTIPLIER = 0.85;
   let currentPx = PX;
   let targetPx = PX;
   let speakingActive = false;
   let speakingBoost = 0;
   const speakingSpeedProfile = {
-    // Per-component speaking speed levels (min 4, max 10).
-    core: 5,
-    rings: 10,
-    ladders: 7,
-    sparks: 6,
-    spokes: 4,
-    pulse: 7,
+    core: 1.4,
+    rings: 1.8,
+    ladders: 1.5,
+    sparks: 1.3,
+    spokes: 1.2,
+    pulse: 1.4,
   };
 
   let _s = 42;
@@ -91,7 +88,7 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   renderer.setSize(innerWidth, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.8;
+  renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
   
@@ -138,7 +135,7 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.05;
-  controls.autoRotate = true; controls.autoRotateSpeed = 0.5;
+  controls.autoRotate = true; controls.autoRotateSpeed = 0.12;
   controls.minDistance = 5 * SF; controls.maxDistance = 25;
   controls.target.set(0, 0, 0); // Always stay focused on the sphere at origin
 
@@ -359,7 +356,7 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 2.7, 0.5, 0.02));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.05, 0.42, 0.04));
 
   // Init lens shift on load
   applyLensShift();
@@ -376,16 +373,16 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
 
     const pulseContainer = document.getElementById("pulse-container");
     if (pulseContainer) {
-      pulseContainer.style.opacity = "0.55";
+      pulseContainer.style.opacity = speakingActive ? "0.28" : "0.14";
       pulseContainer.style.transform = \`translateX(\${currentPx * 5}vw) scale(1.0)\`;
     }
 
-    shells[0].scale.setScalar(1 + beat * 0.3); shells[1].scale.setScalar(1 + beat * 0.18);
-    shells[2].scale.setScalar(1 + beat2 * 0.1); shells[3].scale.setScalar(1 + beat2 * 0.06);
-    shells[0].material.opacity = 0.11 + beat * 0.11; shells[1].material.opacity = 0.05 + beat * 0.07;
-    shells[2].material.opacity = 0.02 + beat * 0.04; shells[3].material.opacity = 0.01 + beat2 * 0.02;
+    shells[0].scale.setScalar(1 + beat * 0.08); shells[1].scale.setScalar(1 + beat * 0.05);
+    shells[2].scale.setScalar(1 + beat2 * 0.03); shells[3].scale.setScalar(1 + beat2 * 0.02);
+    shells[0].material.opacity = 0.11 + beat * 0.04; shells[1].material.opacity = 0.05 + beat * 0.03;
+    shells[2].material.opacity = 0.02 + beat * 0.02; shells[3].material.opacity = 0.01 + beat2 * 0.015;
 
-    coreRing.material.opacity = 0.15 + beat * 0.11;
+    coreRing.material.opacity = 0.15 + beat * 0.04;
     coreRing.rotation.z += BASE_SPEED_MULTIPLIER * 0.012;
     cr2.rotation.z += BASE_SPEED_MULTIPLIER * 0.007;
     coreGrp.scale.setScalar(1);
@@ -411,12 +408,12 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
       mesh.rotation[axis === "y" ? "z" : "y"] += ladderStep * 0.25 * dir;
     });
 
-    renderer.toneMappingExposure = 1.02 + beat * 0.18;
+    renderer.toneMappingExposure = 1.08 + beat * 0.06;
 
     sparkSystems.forEach((s, i) => {
       s.rotation.y += 0.0008 * BASE_SPEED_MULTIPLIER * (i % 2 ? 1 : -1);
       s.rotation.x += 0.0004 * BASE_SPEED_MULTIPLIER * (i % 3 ? 1 : -1);
-      s.material.opacity = (i < 3 ? 0.42 : 0.2) + Math.sin(t * BASE_SPEED_MULTIPLIER * 2 + i) * 0.09;
+      s.material.opacity = (i < 3 ? 0.38 : 0.18) + Math.sin(t * BASE_SPEED_MULTIPLIER * 1.2 + i) * 0.03;
     });
 
     spokeGrp.rotation.y += BASE_SPEED_MULTIPLIER * 0.001;

@@ -47,11 +47,11 @@ export function ChatControls({
       >
         {micOn ? (
           <>
-            <span className={`sound-wave ${voiceDetected ? "active" : ""}`} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
+            <span
+              className={`mic-live-dot ${voiceDetected ? "active" : ""}`}
+              aria-hidden="true"
+              title={voiceDetected ? "Voice detected" : "Listening"}
+            />
             Mic On
           </>
         ) : (
