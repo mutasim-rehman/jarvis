@@ -11,7 +11,11 @@ type SettingsPanelProps = {
   voiceprintStatus: VoiceprintStatus | null;
   voiceprintEnrollState: VoiceprintEnrollState;
   enrollmentPrompt: string | null;
+  enrollmentPhraseReady: boolean;
+  enrollmentSubmitBusy: boolean;
+  voiceDetected: boolean;
   onStartOrRedoVoiceprint: () => void;
+  onSubmitEnrollmentPhrase: () => void;
   onRefresh: () => void;
   onOpenDevTools: () => void;
   onClose: () => void;
@@ -21,7 +25,11 @@ export function SettingsPanel({
   voiceprintStatus,
   voiceprintEnrollState,
   enrollmentPrompt,
+  enrollmentPhraseReady,
+  enrollmentSubmitBusy,
+  voiceDetected,
   onStartOrRedoVoiceprint,
+  onSubmitEnrollmentPhrase,
   onRefresh,
   onOpenDevTools,
   onClose,
@@ -72,6 +80,27 @@ export function SettingsPanel({
               </>
             )}
           </p>
+          {voiceprintEnrollState.active ? (
+            <div className="voiceprint-enroll-actions">
+              <p className="voiceprint-enroll-hint">
+                Speak the phrase at your own pace. Short pauses are fine—when you are completely done with this
+                phrase, tap Submit phrase (do not submit after every pause).
+              </p>
+              {voiceDetected ? (
+                <p className="voiceprint-enroll-status" role="status">
+                  Hearing you…
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="voiceprint-submit-phrase"
+                disabled={!enrollmentPhraseReady || enrollmentSubmitBusy}
+                onClick={onSubmitEnrollmentPhrase}
+              >
+                {enrollmentSubmitBusy ? "Submitting…" : "Submit phrase"}
+              </button>
+            </div>
+          ) : null}
         </div>
         <button type="button" onClick={onStartOrRedoVoiceprint}>
           {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo Voice Print" : "Start Voice Print"}

@@ -497,6 +497,36 @@ input:focus {
   color: var(--ui-text-muted) !important;
 }
 
+.voiceprint-enroll-actions {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.voiceprint-enroll-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ui-text-muted);
+}
+
+.voiceprint-enroll-status {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(100, 180, 130, 0.9);
+}
+
+button.voiceprint-submit-phrase {
+  width: 100%;
+  background: var(--ui-active-bg);
+  border-color: var(--ui-active-border);
+}
+
+button.voiceprint-submit-phrase:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .panel-header-actions {
   display: flex;
   gap: 6px;

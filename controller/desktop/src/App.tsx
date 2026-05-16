@@ -128,6 +128,10 @@ export default function App() {
   const ttsAudioContextRef = useRef<AudioContext | null>(null);
   const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const pollBackoffRef = useRef(0);
+  const voiceprintEnrollStateRef = useRef(voiceprintEnrollState);
+  const enrollmentPhraseBufferRef = useRef<PendingSegment[]>([]);
+  const [enrollmentPhraseReady, setEnrollmentPhraseReady] = useState(false);
+  const [enrollmentSubmitBusy, setEnrollmentSubmitBusy] = useState(false);
 
   const servicesById = useMemo(
     () => services.reduce<Record<string, ServiceStatus>>((acc, service) => {
@@ -146,6 +150,26 @@ export default function App() {
     if (botMode === "huggingface_cloud") return "Cloud Bot (Hugging Face)";
     return "Cloud Bot (Jarvis)";
   }, [botMode]);
+  useEffect(() => {
+    voiceprintEnrollStateRef.current = voiceprintEnrollState;
+  }, [voiceprintEnrollState]);
+
+  const syncEnrollmentPhraseReady = useCallback(() => {
+    const chunks = enrollmentPhraseBufferRef.current;
+    if (chunks.length === 0) {
+      setEnrollmentPhraseReady(false);
+      return;
+    }
+    const totalSamples = chunks.reduce((sum, chunk) => sum + chunk.audio.length, 0);
+    const sampleRate = chunks[0]?.inputSampleRate ?? 16000;
+    setEnrollmentPhraseReady(totalSamples / sampleRate >= MIC_SEGMENT_MIN_SECONDS);
+  }, []);
+
+  const clearEnrollmentPhraseBuffer = useCallback(() => {
+    enrollmentPhraseBufferRef.current = [];
+    setEnrollmentPhraseReady(false);
+  }, []);
+
   const cycleBotMode = useCallback(() => {
     setBotMode((current) => {
       if (current === "jarvis_cloud") return "huggingface_cloud";
@@ -313,13 +337,71 @@ export default function App() {
     const enrollmentPhrases = resetResponse.data.enrollment_phrases ?? [];
     const first = enrollmentPhrases[0] ?? "";
     setVoiceprintStatus(resetResponse.data);
+    clearEnrollmentPhraseBuffer();
     setVoiceprintEnrollState({ active: true, samplesCollected: 0, minRequired, enrollmentPhrases });
     setMicOn(true);
     addMessage(
       "system",
-      `Voiceprint enrollment started: ${minRequired} different phrases (better coverage than one repeated line). First phrase: "${first}"`,
+      `Voiceprint enrollment started (${minRequired} phrases). Say phrase 1 at your own pace, then use Submit phrase in Settings when finished—not after each pause. First phrase: "${first}"`,
     );
-  }, [addMessage, backendBaseUrl]);
+  }, [addMessage, backendBaseUrl, clearEnrollmentPhraseBuffer]);
+
+  const submitEnrollmentPhrase = useCallback(async () => {
+    if (enrollmentSubmitBusy || !voiceprintEnrollStateRef.current.active) return;
+    const chunks = enrollmentPhraseBufferRef.current;
+    if (chunks.length === 0) return;
+
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.audio.length, 0);
+    const sampleRate = chunks[0].inputSampleRate;
+    if (totalLength / sampleRate < MIC_SEGMENT_MIN_SECONDS) return;
+
+    setEnrollmentSubmitBusy(true);
+    try {
+      const merged = mergeFloat32Chunks(
+        chunks.map((chunk) => chunk.audio),
+        totalLength,
+      );
+      const pcm = downsampleTo16BitPcm(merged, sampleRate, 16000);
+      if (pcm.length < 8000) {
+        addMessage("system", "Recording too short. Speak a bit longer, then submit again.");
+        return;
+      }
+      const wavBytes = wavBytesFromPcm16(pcm, 16000);
+      const enrollResponse = await window.desktopApi.enrollVoiceprintSample(wavBytes, backendBaseUrl);
+      if ("error" in enrollResponse) {
+        addMessage("system", `Voiceprint enroll error: ${enrollResponse.error}`);
+        return;
+      }
+      clearEnrollmentPhraseBuffer();
+      const {
+        samples_collected,
+        min_required_samples,
+        ready_to_finalize,
+        enrollment_phrases,
+        next_enrollment_phrase,
+      } = enrollResponse.data;
+      setVoiceprintEnrollState((prev) => ({
+        active: !ready_to_finalize,
+        samplesCollected: samples_collected,
+        minRequired: min_required_samples,
+        enrollmentPhrases: enrollment_phrases?.length ? enrollment_phrases : prev.enrollmentPhrases,
+      }));
+      if (ready_to_finalize) {
+        const finalizeResponse = await window.desktopApi.finalizeVoiceprint(backendBaseUrl);
+        if ("error" in finalizeResponse) {
+          addMessage("system", `Voiceprint finalize error: ${finalizeResponse.error}`);
+        } else {
+          setVoiceprintStatus(finalizeResponse.data);
+          addMessage("system", "Voiceprint setup complete. Speaker verification is now enabled.");
+        }
+      } else {
+        const nextHint = next_enrollment_phrase ? ` Next phrase: "${next_enrollment_phrase}"` : "";
+        addMessage("system", `Phrase ${samples_collected}/${min_required_samples} saved.${nextHint}`);
+      }
+    } finally {
+      setEnrollmentSubmitBusy(false);
+    }
+  }, [addMessage, backendBaseUrl, clearEnrollmentPhraseBuffer]);
 
   const suppressMicFor = useCallback((ms: number) => {
     const until = Date.now() + Math.max(0, ms);
@@ -502,42 +584,6 @@ export default function App() {
         const encodeStart = performance.now();
         const wavBytes = wavBytesFromPcm16(pcm, 16000);
         const encodedMs = performance.now() - encodeStart;
-        if (voiceprintEnrollState.active) {
-          const enrollResponse = await window.desktopApi.enrollVoiceprintSample(wavBytes, backendBaseUrl);
-          if ("error" in enrollResponse) {
-            addMessage("system", `Voiceprint enroll error: ${enrollResponse.error}`);
-            continue;
-          }
-          const {
-            samples_collected,
-            min_required_samples,
-            ready_to_finalize,
-            enrollment_phrases,
-            next_enrollment_phrase,
-          } = enrollResponse.data;
-          setVoiceprintEnrollState((prev) => ({
-            active: !ready_to_finalize,
-            samplesCollected: samples_collected,
-            minRequired: min_required_samples,
-            enrollmentPhrases: enrollment_phrases?.length ? enrollment_phrases : prev.enrollmentPhrases,
-          }));
-          if (ready_to_finalize) {
-            const finalizeResponse = await window.desktopApi.finalizeVoiceprint(backendBaseUrl);
-            if ("error" in finalizeResponse) {
-              addMessage("system", `Voiceprint finalize error: ${finalizeResponse.error}`);
-            } else {
-              setVoiceprintStatus(finalizeResponse.data);
-              addMessage("system", "Voiceprint setup complete. Speaker verification is now enabled.");
-            }
-          } else {
-            const nextHint = next_enrollment_phrase ? ` Next: "${next_enrollment_phrase}"` : "";
-            addMessage(
-              "system",
-              `Voiceprint phrase ${samples_collected}/${min_required_samples} saved.${nextHint}`,
-            );
-          }
-          continue;
-        }
         if (voiceprintStatus?.enabled) {
           const verifyResponse = await window.desktopApi.verifyVoiceprint(wavBytes, backendBaseUrl);
           if ("error" in verifyResponse) {
@@ -597,13 +643,18 @@ export default function App() {
       setLocalTranscribeBusy(false);
       voiceWorkerActiveRef.current = false;
     }
-  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, voiceLockEnabled, voiceprintEnrollState.active, voiceprintStatus?.enabled]);
+  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, voiceLockEnabled, voiceprintStatus?.enabled]);
 
   const enqueueLocalSegment = useCallback((audio: Float32Array, inputSampleRate: number) => {
     if (!micOnRef.current || isMicSuppressed()) return;
+    if (voiceprintEnrollStateRef.current.active) {
+      enrollmentPhraseBufferRef.current.push({ audio, inputSampleRate });
+      syncEnrollmentPhraseReady();
+      return;
+    }
     pendingLocalSegmentsRef.current.push({ audio, inputSampleRate });
     void processVoiceQueue();
-  }, [isMicSuppressed, processVoiceQueue]);
+  }, [isMicSuppressed, processVoiceQueue, syncEnrollmentPhraseReady]);
 
   const startLocalMicCapture = useCallback(async () => {
     if (localMicStateRef.current || localMicInitializingRef.current) return;
@@ -979,7 +1030,11 @@ export default function App() {
           voiceprintStatus={voiceprintStatus}
           voiceprintEnrollState={voiceprintEnrollState}
           enrollmentPrompt={voiceprintEnrollmentPrompt(voiceprintEnrollState)}
+          enrollmentPhraseReady={enrollmentPhraseReady}
+          enrollmentSubmitBusy={enrollmentSubmitBusy}
+          voiceDetected={voiceDetected}
           onStartOrRedoVoiceprint={() => void handleStartOrRedoVoiceprint()}
+          onSubmitEnrollmentPhrase={() => void submitEnrollmentPhrase()}
           onRefresh={() => void refreshAll()}
           onOpenDevTools={() => void window.desktopApi.openDevTools()}
           onClose={() => setActiveView("chat")}
