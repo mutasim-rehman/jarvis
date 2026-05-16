@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     stt_provider: str = "faster_whisper"
     stt_whisper_model_size: str = "small"
     stt_whisper_model_path: str = ""
-    stt_whisper_device: str = "auto"
+    stt_whisper_device: str = "cpu"
     stt_whisper_compute_type: str = "int8"
     stt_whisper_beam_size: int = 1
     stt_whisper_language: str = "en"

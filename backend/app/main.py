@@ -45,10 +45,7 @@ def _log_executor_task_result(task: asyncio.Task) -> None:
         logger.exception("executor background task failed")
 
 
-_WARMUP_TIMEOUT_SECONDS = 120.0
-
-
-_WARMUP_TIMEOUT_SECONDS = 120.0
+_WARMUP_TIMEOUT_SECONDS = 15.0
 
 
 async def _run_warmup_task(name: str, warmup_fn) -> None:
@@ -73,7 +70,10 @@ async def _run_warmup_task(name: str, warmup_fn) -> None:
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    logger.info("startup: scheduling background STT/TTS warmup")
+    global _stt_ready, _tts_ready
+    logger.info("startup: marking STT/TTS ready immediately; warmup runs in background")
+    _stt_ready = True
+    _tts_ready = True
     asyncio.create_task(_run_warmup_task("stt", warmup_model))
     asyncio.create_task(_run_warmup_task("tts", warmup_tts))
 
