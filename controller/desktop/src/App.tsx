@@ -1,34 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  HealthResponse,
   ServiceId,
   ServiceLogEvent,
   ServiceStatus,
   TerminalSnapshot,
   VoiceprintStatus,
 } from "./desktop-api";
+import {
+  type BotMode,
+  type ChatProviderOverride,
+  defaultHealthMap,
+  extractAssistantText,
+  extractFallbackMeta,
+  type PendingConfirm,
+} from "./appHelpers";
+import { downsampleTo16BitPcm, mergeFloat32Chunks, wavBytesFromPcm16 } from "./audioUtils";
+import { ConfirmModal } from "./components/ConfirmModal";
+import { ConversationPane } from "./components/ConversationPane";
+import { ServiceLogsPanel } from "./components/ServiceLogsPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { SpeakModeControls } from "./components/SpeakModeControls";
+import { StatusBar } from "./components/StatusBar";
+import { TerminalsPanel } from "./components/TerminalsPanel";
+import type { ConversationMessage, ConversationRole } from "./types/conversation";
+import { sanitizeVoiceCommand, voiceprintEnrollmentPrompt } from "./voiceUtils";
 import "./AppClean.css";
 import { JarvisHUD } from "./JarvisHUD";
 
 const healthServiceIds: ServiceId[] = ["backend", "executor"];
 const coreServiceIds: ServiceId[] = ["backend", "executor"];
 const defaultBackendBaseUrl = "http://127.0.0.1:8000";
-
-type ConversationRole = "user" | "assistant" | "system";
-type ConversationMessage = {
-  id: string;
-  role: ConversationRole;
-  text: string;
-};
-type ChatProviderOverride = "huggingface" | "ollama";
-type BotMode = "jarvis_cloud" | "huggingface_cloud" | "local_ollama";
-
-type ChatbotFallbackMeta = {
-  status?: string;
-  chatbot_provider?: string;
-  reason?: string;
-  fallback_options?: Array<{ id?: string; label?: string }>;
-};
 
 type BrowserSpeechRecognition = {
   continuous: boolean;
@@ -81,176 +82,11 @@ const MIC_SUSTAIN_RMS = 0.0075;
 const MIC_SEND_COOLDOWN_MS = 260;
 const MIC_DUPLICATE_WINDOW_MS = 4500;
 const PREFER_LOCAL_MIC = true;
-const WAKE_WORD_REGEX = /^(?:hey\s+|ok\s+)?jarvis[\s,.:!-]*/i;
-
-function voiceprintEnrollmentPrompt(state: VoiceprintEnrollState): string | null {
-  if (!state.active || state.enrollmentPhrases.length === 0) return null;
-  if (state.samplesCollected >= state.minRequired) return null;
-  const idx = Math.min(state.samplesCollected, state.enrollmentPhrases.length - 1);
-  return state.enrollmentPhrases[idx] ?? null;
-}
-
-function sanitizeVoiceCommand(rawTranscript: string, requireWakeWord: boolean): string | null {
-  const cleaned = rawTranscript.trim().replace(/\s+/g, " ");
-  if (!cleaned) return null;
-  if (!requireWakeWord) return cleaned;
-  if (!WAKE_WORD_REGEX.test(cleaned)) return null;
-  const withoutWakeWord = cleaned.replace(WAKE_WORD_REGEX, "").trim();
-  return withoutWakeWord || null;
-}
-
-function defaultHealthMap() {
-  return {
-    backend: { ok: false, status: 0, error: "Not checked yet" } satisfies HealthResponse,
-    executor: { ok: false, status: 0, error: "Not checked yet" } satisfies HealthResponse,
-  };
-}
-
-function extractAssistantText(data: unknown): string {
-  if (typeof data === "string") return data;
-  if (!data || typeof data !== "object") return "Received response from backend.";
-
-  const record = data as Record<string, unknown>;
-
-  const executionResult = record.execution_result;
-  if (executionResult && typeof executionResult === "object") {
-    const results = (executionResult as Record<string, unknown>).results;
-    if (Array.isArray(results)) {
-      // Prefer actionable executor output over parser acks like "On it.".
-      const bestTask = [...results]
-        .reverse()
-        .find((item) => {
-          if (!item || typeof item !== "object") return false;
-          const row = item as Record<string, unknown>;
-          const message = row.message;
-          return typeof message === "string" && message.trim().length > 0;
-        });
-      if (bestTask && typeof bestTask === "object") {
-        const message = (bestTask as Record<string, unknown>).message;
-        if (typeof message === "string" && message.trim()) {
-          return message;
-        }
-      }
-    }
-  }
-
-  const candidateKeys = ["response", "text", "message", "output", "assistant"];
-  for (const key of candidateKeys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-  }
-
-  const nestedAssistant = record.assistant_response;
-  if (nestedAssistant && typeof nestedAssistant === "object") {
-    const nestedMessage = (nestedAssistant as Record<string, unknown>).message;
-    if (typeof nestedMessage === "string" && nestedMessage.trim()) {
-      return nestedMessage;
-    }
-  }
-  return JSON.stringify(data, null, 2);
-}
-
-function extractFallbackMeta(data: unknown): ChatbotFallbackMeta | null {
-  if (!data || typeof data !== "object") return null;
-  const assistantResponse = (data as Record<string, unknown>).assistant_response;
-  if (!assistantResponse || typeof assistantResponse !== "object") return null;
-  const meta = (assistantResponse as Record<string, unknown>).meta;
-  if (!meta || typeof meta !== "object") return null;
-  const candidate = meta as ChatbotFallbackMeta;
-  if (candidate.status !== "unavailable") return null;
-  return candidate;
-}
-
-function mergeFloat32Chunks(chunks: Float32Array[], totalLength: number): Float32Array {
-  const merged = new Float32Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return merged;
-}
-
-function downsampleTo16BitPcm(
-  input: Float32Array,
-  inputSampleRate: number,
-  outputSampleRate = 16000
-): Int16Array {
-  if (input.length === 0) {
-    return new Int16Array(0);
-  }
-
-  if (inputSampleRate === outputSampleRate) {
-    const pcm = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i += 1) {
-      const sample = Math.max(-1, Math.min(1, input[i]));
-      pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-    }
-    return pcm;
-  }
-
-  const ratio = inputSampleRate / outputSampleRate;
-  const outputLength = Math.max(1, Math.floor(input.length / ratio));
-  const pcm = new Int16Array(outputLength);
-  let outputIndex = 0;
-  let inputIndex = 0;
-
-  while (outputIndex < outputLength) {
-    const nextInputIndex = Math.min(input.length, Math.round((outputIndex + 1) * ratio));
-    let sum = 0;
-    let count = 0;
-    for (let i = inputIndex; i < nextInputIndex; i += 1) {
-      sum += input[i];
-      count += 1;
-    }
-    const averaged = count > 0 ? sum / count : input[Math.min(inputIndex, input.length - 1)];
-    const sample = Math.max(-1, Math.min(1, averaged));
-    pcm[outputIndex] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-    outputIndex += 1;
-    inputIndex = nextInputIndex;
-  }
-
-  return pcm;
-}
-
-function wavBytesFromPcm16(pcm: Int16Array, sampleRate: number): Uint8Array {
-  const buffer = new ArrayBuffer(44 + pcm.length * 2);
-  const view = new DataView(buffer);
-  const writeText = (offset: number, value: string) => {
-    for (let i = 0; i < value.length; i += 1) {
-      view.setUint8(offset + i, value.charCodeAt(i));
-    }
-  };
-
-  writeText(0, "RIFF");
-  view.setUint32(4, 36 + pcm.length * 2, true);
-  writeText(8, "WAVE");
-  writeText(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true); // mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeText(36, "data");
-  view.setUint32(40, pcm.length * 2, true);
-
-  let offset = 44;
-  for (let i = 0; i < pcm.length; i += 1) {
-    view.setInt16(offset, pcm[i], true);
-    offset += 2;
-  }
-
-  return new Uint8Array(buffer);
-}
-
 export default function App() {
   const [activeView, setActiveView] = useState<AppView>("chat");
   const [services, setServices] = useState<ServiceStatus[]>([]);
-  const [health, setHealth] = useState<Record<"backend" | "executor", HealthResponse>>(defaultHealthMap);
+  const [health, setHealth] = useState(defaultHealthMap);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [backendBaseUrl, setBackendBaseUrl] = useState(defaultBackendBaseUrl);
   const [chatInput, setChatInput] = useState("");
   const [inFlightChatCount, setInFlightChatCount] = useState(0);
@@ -317,11 +153,6 @@ export default function App() {
       return "jarvis_cloud";
     });
   }, []);
-  const runningTerminals = terminals.filter((terminal) => {
-    if (terminal.activeCommand.trim()) return true;
-    return terminal.lastExitCode === "" || terminal.lastExitCode === "null";
-  });
-
   const refreshServices = useCallback(async () => {
     const next = await window.desktopApi.listServices();
     setServices(next);
@@ -381,6 +212,7 @@ export default function App() {
         id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         role,
         text: payload,
+        createdAt: Date.now(),
       },
     ]);
   }, []);
@@ -587,16 +419,22 @@ export default function App() {
       const fallbackMeta = extractFallbackMeta(result.data);
       addMessage("assistant", reply);
       if (fallbackMeta && provider !== "ollama") {
-        const provider = fallbackMeta.chatbot_provider ?? "huggingface";
-        const useLocal = window.confirm(
-          `${provider} is currently unavailable.\n\nPress OK to run this request locally with Ollama.\nPress Cancel to wait and retry Hugging Face later.`
-        );
-        if (useLocal) {
-          addMessage("system", "Switching this request to local Ollama.");
-          await sendTextImpl(text, "ollama", true);
-        } else {
-          addMessage("system", "Keeping Hugging Face mode. Retry once it is available.");
-        }
+        const providerName = fallbackMeta.chatbot_provider ?? "huggingface";
+        setPendingConfirm({
+          title: "Cloud provider unavailable",
+          message: `${providerName} is currently unavailable. Run this request locally with Ollama, or wait and retry the cloud provider later.`,
+          confirmLabel: "Use Ollama",
+          cancelLabel: "Wait",
+          onConfirm: () => {
+            setPendingConfirm(null);
+            addMessage("system", "Switching this request to local Ollama.");
+            void sendTextImpl(text, "ollama", true);
+          },
+          onCancel: () => {
+            setPendingConfirm(null);
+            addMessage("system", "Keeping cloud mode. Retry once it is available.");
+          },
+        });
         return;
       }
       if (speakModeOn) {
@@ -1050,153 +888,113 @@ export default function App() {
     await sendText(text);
   };
 
+  const settingsOpen = activeView === "settings";
+  const voiceprintSummary = voiceprintEnrollState.active
+    ? `enrolling ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
+    : voiceprintStatus?.enabled
+      ? "enabled"
+      : "not set";
+
+  const toggleSettings = () => {
+    if (settingsOpen) {
+      setActiveView("chat");
+      return;
+    }
+    setActiveView("settings");
+    setTerminalsOpen(false);
+    setServiceLogsOpen(false);
+  };
+
+  const toggleTerminals = () => {
+    const next = !terminalsOpen;
+    setTerminalsOpen(next);
+    if (next) {
+      void loadTerminals();
+      setActiveView("chat");
+      setServiceLogsOpen(false);
+    }
+  };
+
+  const toggleServiceLogs = () => {
+    const next = !serviceLogsOpen;
+    setServiceLogsOpen(next);
+    if (next) {
+      setTerminalsOpen(false);
+      setActiveView("chat");
+    }
+  };
+
+  const exitSpeakMode = () => {
+    setSpeakModeOn(false);
+    window.speechSynthesis.cancel();
+    setAssistantSpeaking(false);
+    setVoiceDetected(false);
+  };
+
   return (
-    <main className={`app ${speakModeOn ? "speak-mode" : ""}`}>
-      <div className="top-bar">
-        <button
-          type="button"
-          className={`icon-button ${activeView === "settings" ? "active" : ""}`}
-          aria-label="Open settings"
-          title="Settings"
-          onClick={() => setActiveView((current) => (current === "settings" ? "chat" : "settings"))}
-        >
-          <span aria-hidden="true">⚙</span>
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            void runServiceAction(async () => {
-              if (areAllCoreRunning) {
-                await window.desktopApi.stopAllServices();
-                return;
-              }
-              const started = await window.desktopApi.startAllServices();
-              for (const err of started.errors) {
-                addMessage("system", err);
-              }
-            })
-          }
-        >
-          {areAllCoreRunning ? "Stop Jarvis" : "Start Jarvis"}
-        </button>
-        <button type="button" onClick={() => void refreshAll()}>
-          Refresh
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (!terminalsOpen) {
-              void loadTerminals();
+    <main className={`app ${speakModeOn ? "speak-mode" : ""} ${serviceLogsOpen ? "service-logs-open" : ""}`}>
+      <StatusBar
+        settingsOpen={settingsOpen}
+        areAllCoreRunning={areAllCoreRunning}
+        activeBotLabel={activeBotLabel}
+        backendBadge={backendBadge}
+        executorOnline={health.executor.ok}
+        onToggleSettings={toggleSettings}
+        onStartStopJarvis={() =>
+          void runServiceAction(async () => {
+            if (areAllCoreRunning) {
+              await window.desktopApi.stopAllServices();
+              return;
             }
-            setTerminalsOpen((value) => !value);
-          }}
-        >
-          Terminals
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setServiceLogsOpen((value) => !value);
-          }}
-        >
-          Logs
-        </button>
-        <button type="button" onClick={() => void window.desktopApi.openDevTools()}>
-          DevTools
-        </button>
-        <button type="button" onClick={cycleBotMode}>
-          {activeBotLabel}
-        </button>
-        <span className={`badge ${backendBadge.className}`}>
-          Backend: {backendBadge.label}
-        </span>
-        <span className={`badge ${health.executor.ok ? "ok" : "error"}`}>
-          Executor: {health.executor.ok ? "Online" : "Offline"}
-        </span>
-      </div>
+            const started = await window.desktopApi.startAllServices();
+            for (const err of started.errors) {
+              addMessage("system", err);
+            }
+          })
+        }
+        onToggleTerminals={toggleTerminals}
+        onToggleServiceLogs={toggleServiceLogs}
+        onCycleBotMode={cycleBotMode}
+      />
 
       {terminalsOpen ? (
-        <section className="terminals-panel">
-          <header>
-            <h3>Running Terminals</h3>
-            <button type="button" onClick={() => void loadTerminals()} disabled={terminalsLoading}>
-              {terminalsLoading ? "Refreshing..." : "Refresh list"}
-            </button>
-          </header>
-          <div className="terminal-items">
-            {runningTerminals.length === 0 ? (
-              <p className="terminal-empty">No running terminals found.</p>
-            ) : (
-              runningTerminals.map((terminal) => (
-                <article key={terminal.id} className="terminal-item">
-                  <strong>#{terminal.id}</strong>
-                  <span>{terminal.cwd || "(cwd unavailable)"}</span>
-                  <code>{terminal.activeCommand || terminal.lastCommand || "(no command recorded)"}</code>
-                </article>
-              ))
-            )}
-          </div>
-        </section>
+        <TerminalsPanel
+          terminals={terminals}
+          loading={terminalsLoading}
+          onRefresh={() => void loadTerminals()}
+          onClose={() => setTerminalsOpen(false)}
+        />
       ) : null}
 
       {serviceLogsOpen ? (
-        <section className="service-logs-panel">
-          <header>
-            <h3>Service logs</h3>
-            <button type="button" onClick={() => setServiceLogEvents([])}>
-              Clear
-            </button>
-          </header>
-          <div className="service-log-lines">
-            {serviceLogEvents.length === 0 ? (
-              <p className="terminal-empty">No log lines yet. Start services or watch for output.</p>
-            ) : (
-              serviceLogEvents.map((entry, idx) => (
-                <div key={`${entry.serviceId}-${idx}-${entry.line.slice(0, 24)}`} className="service-log-line">
-                  <span className="service-log-id">{entry.serviceId}</span>
-                  <code>{entry.line}</code>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
+        <ServiceLogsPanel
+          events={serviceLogEvents}
+          onClear={() => setServiceLogEvents([])}
+          onClose={() => setServiceLogsOpen(false)}
+        />
       ) : null}
 
-      {activeView === "settings" ? (
-        <section className="settings-panel">
-          <header>
-            <h3>Settings</h3>
-          </header>
-          <article className="settings-item">
-            <div>
-              <strong>Voice Print</strong>
-              <p>
-                {voiceprintEnrollState.active
-                  ? `Enrollment in progress: ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
-                  : (voiceprintStatus?.enabled ? "Voice verification enabled." : "Not enrolled yet.")}
-              </p>
-              <p className="voiceprint-prompt">
-                {voiceprintEnrollState.active ? (
-                  <>
-                    Phrase {Math.min(voiceprintEnrollState.samplesCollected + 1, voiceprintEnrollState.minRequired)} of{" "}
-                    {voiceprintEnrollState.minRequired}: <q>{voiceprintEnrollmentPrompt(voiceprintEnrollState) ?? "…"}</q>
-                  </>
-                ) : voiceprintStatus?.enabled ? (
-                  <>Each command segment is checked against your voice. Speak naturally; no fixed passphrase is required.</>
-                ) : (
-                  <>
-                    Enrollment records {voiceprintStatus?.min_required_samples ?? "several"} different phrases so the
-                    model hears varied sounds—not one replayable line.
-                  </>
-                )}
-              </p>
-            </div>
-            <button type="button" onClick={() => void handleStartOrRedoVoiceprint()}>
-              {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo Voice Print" : "Start Voice Print"}
-            </button>
-          </article>
-        </section>
+      {settingsOpen ? (
+        <SettingsPanel
+          voiceprintStatus={voiceprintStatus}
+          voiceprintEnrollState={voiceprintEnrollState}
+          enrollmentPrompt={voiceprintEnrollmentPrompt(voiceprintEnrollState)}
+          onStartOrRedoVoiceprint={() => void handleStartOrRedoVoiceprint()}
+          onRefresh={() => void refreshAll()}
+          onOpenDevTools={() => void window.desktopApi.openDevTools()}
+          onClose={() => setActiveView("chat")}
+        />
       ) : null}
+
+      <ConfirmModal
+        open={pendingConfirm !== null}
+        title={pendingConfirm?.title ?? ""}
+        message={pendingConfirm?.message ?? ""}
+        confirmLabel={pendingConfirm?.confirmLabel}
+        cancelLabel={pendingConfirm?.cancelLabel}
+        onConfirm={() => pendingConfirm?.onConfirm()}
+        onCancel={() => pendingConfirm?.onCancel()}
+      />
 
       <section className={`layout ${speakModeOn ? "layout-speak" : ""}`}>
         <div className="visual-pane">
@@ -1209,95 +1007,43 @@ export default function App() {
           </div>
         </div>
 
-        <aside className={`conversation-pane ${speakModeOn ? "hidden" : ""}`}>
-          <h2>Jarvis Conversation</h2>
-          <p className="empty">Active chat mode: {activeBotLabel}</p>
-          <p className="empty">
-            Voiceprint: {voiceprintEnrollState.active
-              ? `enrolling ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
-              : (voiceprintStatus?.enabled ? "enabled" : "not set")}
-          </p>
-          <div className="messages">
-            {messages.length === 0 ? (
-              <p className="empty">No conversation yet.</p>
-            ) : (
-              messages.map((message) => (
-                <article key={message.id} className={`message ${message.role}`}>
-                  <strong>{message.role}</strong>
-                  <p>{message.text}</p>
-                </article>
-              ))
-            )}
-          </div>
-          <form className="chat-controls" onSubmit={handleSend}>
-            <input
-              placeholder="Enter command..."
-              value={chatInput}
-              disabled={!health.backend.ok}
-              onChange={(e) => setChatInput(e.target.value)}
-            />
-            <button type="submit" disabled={!chatInput.trim() || !health.backend.ok}>
-              {inFlightChatCount > 0 ? "Sending..." : "Send"}
-            </button>
-            <button
-              type="button"
-              className={micOn ? "active" : ""}
-              disabled={!health.backend.ok}
-              onClick={() => setMicOn((value) => !value)}
-            >
-              {micOn ? "Mic On" : "Mic"}
-            </button>
-            <button
-              type="button"
-              className={voiceLockEnabled ? "active" : ""}
-              onClick={() => setVoiceLockEnabled((value) => !value)}
-            >
-              {voiceLockEnabled ? "Voice Lock" : "Voice Open"}
-            </button>
-            <button
-              type="button"
-              className={speakModeOn ? "active" : ""}
-              onClick={() => {
-                setSpeakModeOn((value) => !value);
-                if (speakModeOn) {
-                  window.speechSynthesis.cancel();
-                  setAssistantSpeaking(false);
-                }
-              }}
-            >
-              {speakModeOn ? "Speak On" : "Speak"}
-            </button>
-          </form>
-        </aside>
+        <ConversationPane
+          hidden={speakModeOn}
+          activeBotLabel={activeBotLabel}
+          voiceprintSummary={voiceprintSummary}
+          backendOnline={health.backend.ok}
+          messages={messages}
+          chatInput={chatInput}
+          inFlightChat={inFlightChatCount > 0}
+          micOn={micOn}
+          voiceLockEnabled={voiceLockEnabled}
+          speakModeOn={speakModeOn}
+          voiceDetected={voiceDetected}
+          onInputChange={setChatInput}
+          onSubmit={handleSend}
+          onToggleMic={() => setMicOn((value) => !value)}
+          onToggleVoiceLock={() => setVoiceLockEnabled((value) => !value)}
+          onToggleSpeakMode={() => {
+            setSpeakModeOn((value) => !value);
+            if (speakModeOn) {
+              window.speechSynthesis.cancel();
+              setAssistantSpeaking(false);
+            }
+          }}
+        />
       </section>
 
       {speakModeOn ? (
-        <div className="speak-floating-controls">
-          <span className={`voice-indicator ${voiceStatus}`}>
-            {voiceStatusLabel}
-          </span>
-          <button
-            type="button"
-            className={micOn ? "active" : ""}
-            disabled={!health.backend.ok}
-            onClick={() => setMicOn((value) => !value)}
-          >
-            {micOn ? "Mic On" : "Mic Off"}
-          </button>
-          <button
-            type="button"
-            className="speak-floating"
-            onClick={() => {
-              setSpeakModeOn(false);
-              window.speechSynthesis.cancel();
-              setAssistantSpeaking(false);
-              setVoiceDetected(false);
-            }}
-          >
-            Speak Off
-          </button>
-        </div>
+        <SpeakModeControls
+          voiceStatus={voiceStatus}
+          voiceStatusLabel={voiceStatusLabel}
+          micOn={micOn}
+          backendOnline={health.backend.ok}
+          onToggleMic={() => setMicOn((value) => !value)}
+          onExitSpeakMode={exitSpeakMode}
+        />
       ) : null}
+
     </main>
   );
 }
