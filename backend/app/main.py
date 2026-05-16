@@ -45,18 +45,30 @@ def _log_executor_task_result(task: asyncio.Task) -> None:
         logger.exception("executor background task failed")
 
 
+_WARMUP_TIMEOUT_SECONDS = 120.0
+
+
+_WARMUP_TIMEOUT_SECONDS = 120.0
+
+
 async def _run_warmup_task(name: str, warmup_fn) -> None:
     global _stt_ready, _tts_ready
     started = time.perf_counter()
     try:
-        await asyncio.to_thread(warmup_fn)
+        await asyncio.wait_for(
+            asyncio.to_thread(warmup_fn),
+            timeout=_WARMUP_TIMEOUT_SECONDS,
+        )
         logger.info("%s warmup completed in %.1fms", name, (time.perf_counter() - started) * 1000)
+    except asyncio.TimeoutError:
+        logger.warning("%s warmup timed out after %.0fs — marking ready and continuing", name, _WARMUP_TIMEOUT_SECONDS)
+    except Exception as exc:
+        logger.warning("%s warmup skipped: %s", name, exc)
+    finally:
         if name == "stt":
             _stt_ready = True
         elif name == "tts":
             _tts_ready = True
-    except Exception as exc:  # pragma: no cover - warmup depends on local model availability
-        logger.warning("%s warmup skipped: %s", name, exc)
 
 
 @app.on_event("startup")
