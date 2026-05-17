@@ -9,11 +9,13 @@ type VoiceprintEnrollState = {
 
 type SettingsPanelProps = {
   voiceprintStatus: VoiceprintStatus | null;
+  voiceprintEnabled: boolean;
   voiceprintEnrollState: VoiceprintEnrollState;
   enrollmentPrompt: string | null;
   enrollmentPhraseReady: boolean;
   enrollmentSubmitBusy: boolean;
   voiceDetected: boolean;
+  onToggleVoiceprint: () => void;
   onStartOrRedoVoiceprint: () => void;
   onSubmitEnrollmentPhrase: () => void;
   onRefresh: () => void;
@@ -23,11 +25,13 @@ type SettingsPanelProps = {
 
 export function SettingsPanel({
   voiceprintStatus,
+  voiceprintEnabled,
   voiceprintEnrollState,
   enrollmentPrompt,
   enrollmentPhraseReady,
   enrollmentSubmitBusy,
   voiceDetected,
+  onToggleVoiceprint,
   onStartOrRedoVoiceprint,
   onSubmitEnrollmentPhrase,
   onRefresh,
@@ -62,7 +66,9 @@ export function SettingsPanel({
             {voiceprintEnrollState.active
               ? `Enrollment in progress: ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
               : voiceprintStatus?.enabled
-                ? "Voice verification enabled."
+                ? voiceprintEnabled
+                  ? "Voice verification active."
+                  : "Voice verification enrolled but disabled."
                 : "Not enrolled yet."}
           </p>
           <p className="voiceprint-prompt">
@@ -72,7 +78,11 @@ export function SettingsPanel({
                 {voiceprintEnrollState.minRequired}: <q>{enrollmentPrompt ?? "…"}</q>
               </>
             ) : voiceprintStatus?.enabled ? (
-              <>Each command segment is checked against your voice. Speak naturally; no fixed passphrase is required.</>
+              voiceprintEnabled ? (
+                <>Each command segment is checked against your voice. Speak naturally; no fixed passphrase is required.</>
+              ) : (
+                <>Verification is paused. Commands are accepted from any voice. Re-enable to restore speaker check.</>
+              )
             ) : (
               <>
                 Enrollment records {voiceprintStatus?.min_required_samples ?? "several"} different phrases so the
@@ -102,9 +112,20 @@ export function SettingsPanel({
             </div>
           ) : null}
         </div>
-        <button type="button" onClick={onStartOrRedoVoiceprint}>
-          {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo Voice Print" : "Start Voice Print"}
-        </button>
+        <div className="voiceprint-actions">
+          {voiceprintStatus?.enabled && !voiceprintEnrollState.active ? (
+            <button
+              type="button"
+              className={voiceprintEnabled ? "voiceprint-toggle-off" : "voiceprint-toggle-on"}
+              onClick={onToggleVoiceprint}
+            >
+              {voiceprintEnabled ? "Disable" : "Enable"}
+            </button>
+          ) : null}
+          <button type="button" onClick={onStartOrRedoVoiceprint}>
+            {voiceprintStatus?.enabled || voiceprintEnrollState.active ? "Redo" : "Start enrollment"}
+          </button>
+        </div>
       </article>
     </section>
   );

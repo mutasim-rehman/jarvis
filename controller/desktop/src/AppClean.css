@@ -527,6 +527,36 @@ button.voiceprint-submit-phrase:disabled {
   cursor: not-allowed;
 }
 
+.voiceprint-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.voiceprint-actions button {
+  flex: 1;
+}
+
+button.voiceprint-toggle-off {
+  background: rgba(80, 40, 50, 0.5);
+  border-color: rgba(160, 70, 90, 0.35);
+  color: rgba(240, 200, 210, 0.9);
+}
+
+button.voiceprint-toggle-off:hover {
+  background: rgba(100, 45, 58, 0.65);
+}
+
+button.voiceprint-toggle-on {
+  background: rgba(30, 65, 45, 0.5);
+  border-color: rgba(60, 130, 90, 0.35);
+  color: rgba(190, 235, 210, 0.9);
+}
+
+button.voiceprint-toggle-on:hover {
+  background: rgba(35, 80, 55, 0.65);
+}
+
 .panel-header-actions {
   display: flex;
   gap: 6px;
@@ -691,6 +721,18 @@ button.voiceprint-submit-phrase:disabled {
   background: rgba(14, 16, 22, 0.85);
   font-size: 11px;
   color: var(--ui-text);
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.voice-indicator small {
+  max-width: min(360px, calc(100vw - 280px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+  font-size: 10px;
 }
 
 .voice-indicator.idle {
@@ -710,6 +752,10 @@ button.voiceprint-submit-phrase:disabled {
 .voice-indicator.speaking {
   border-color: rgba(100, 150, 200, 0.35);
   color: rgba(200, 220, 240, 0.95);
+}
+
+.voice-indicator.voice-active {
+  box-shadow: 0 0 0 2px rgba(100, 180, 130, 0.14), 0 0 24px rgba(100, 180, 130, 0.18);
 }
 
 /* ─── CONFIRM MODAL ───────────────────────────────────────────── */

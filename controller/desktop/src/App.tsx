@@ -71,12 +71,21 @@ type VoiceprintEnrollState = {
   enrollmentPhrases: string[];
 };
 
+type TtsStreamEvent =
+  | {
+      type: "audio_chunk";
+      audio_base64?: string;
+    }
+  | {
+      type: "done";
+    };
+
 type AppView = "chat" | "settings";
 
 const MIC_SEGMENT_MIN_SECONDS = 0.35;
 const MIC_SEGMENT_MAX_SECONDS = 4.5;
 const MIC_PRE_ROLL_SECONDS = 0.35;
-const MIC_SILENCE_TAIL_SECONDS = 0.45;
+const MIC_SILENCE_TAIL_SECONDS = 0.35;
 const MIC_TRIGGER_RMS = 0.012;
 const MIC_SUSTAIN_RMS = 0.0075;
 const MIC_SEND_COOLDOWN_MS = 260;
@@ -96,6 +105,7 @@ export default function App() {
   const [micOn, setMicOn] = useState(false);
   const [speakModeOn, setSpeakModeOn] = useState(false);
   const [assistantSpeaking, setAssistantSpeaking] = useState(false);
+  const [lastHeardText, setLastHeardText] = useState("");
   const [localTranscribeBusy, setLocalTranscribeBusy] = useState(false);
   const [voiceDetected, setVoiceDetected] = useState(false);
   const [voiceLockEnabled, setVoiceLockEnabled] = useState(true);
@@ -106,6 +116,9 @@ export default function App() {
     minRequired: 5,
     enrollmentPhrases: [],
   });
+  const [voiceprintEnabled, setVoiceprintEnabled] = useState<boolean>(
+    () => localStorage.getItem("voiceprint_enabled") !== "false",
+  );
   const [terminalsOpen, setTerminalsOpen] = useState(false);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [terminals, setTerminals] = useState<TerminalSnapshot[]>([]);
@@ -127,6 +140,10 @@ export default function App() {
   const perfEnabledRef = useRef(true);
   const ttsAudioContextRef = useRef<AudioContext | null>(null);
   const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const ttsScheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const ttsAbortControllerRef = useRef<AbortController | null>(null);
+  const ttsGenerationRef = useRef(0);
+  const assistantSpeakingRef = useRef(false);
   const pollBackoffRef = useRef(0);
   const voiceprintEnrollStateRef = useRef(voiceprintEnrollState);
   const enrollmentPhraseBufferRef = useRef<PendingSegment[]>([]);
@@ -142,8 +159,8 @@ export default function App() {
   );
   
   const areAllCoreRunning = coreServiceIds.every((id) => servicesById[id]?.running);
-  const activeProvider = useMemo<ChatProviderOverride>(() => (
-    botMode === "local_ollama" ? "ollama" : "huggingface"
+  const activeProvider = useMemo<ChatProviderOverride | undefined>(() => (
+    botMode === "local_ollama" ? "ollama" : undefined
   ), [botMode]);
   const activeBotLabel = useMemo(() => {
     if (botMode === "local_ollama") return "Local Bot (Ollama)";
@@ -153,6 +170,14 @@ export default function App() {
   useEffect(() => {
     voiceprintEnrollStateRef.current = voiceprintEnrollState;
   }, [voiceprintEnrollState]);
+
+  useEffect(() => {
+    localStorage.setItem("voiceprint_enabled", voiceprintEnabled ? "true" : "false");
+  }, [voiceprintEnabled]);
+
+  useEffect(() => {
+    assistantSpeakingRef.current = assistantSpeaking;
+  }, [assistantSpeaking]);
 
   const syncEnrollmentPhraseReady = useCallback(() => {
     const chunks = enrollmentPhraseBufferRef.current;
@@ -410,14 +435,62 @@ export default function App() {
 
   const isMicSuppressed = useCallback(() => Date.now() < micSuppressUntilRef.current, []);
 
+  const stopCurrentTts = useCallback(() => {
+    ttsGenerationRef.current += 1;
+    ttsAbortControllerRef.current?.abort();
+    ttsAbortControllerRef.current = null;
+    for (const source of ttsScheduledSourcesRef.current) {
+      try {
+        source.stop();
+      } catch {
+        /* already ended */
+      }
+      try {
+        source.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+    }
+    ttsScheduledSourcesRef.current = [];
+    ttsSourceRef.current = null;
+    micSuppressUntilRef.current = Date.now() + 120;
+    assistantSpeakingRef.current = false;
+    setAssistantSpeaking(false);
+  }, []);
+
   const speakAssistant = useCallback(
     async (text: string) => {
       const cleanText = text.trim();
       if (!cleanText) return;
       const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
       const fallbackMs = Math.min(18000, Math.max(1200, wordCount * 340 + 900));
+      stopCurrentTts();
+      const generation = ttsGenerationRef.current;
+      // #region agent log
+      addMessage("system", `[DBG-B] speakAssistant entry: gen=${generation} text="${cleanText.slice(0,40)}"`);
+      console.log('[DBG-B] speakAssistant entry', {generation, genAfterStop:ttsGenerationRef.current, text:cleanText.slice(0,80)});
+      // #endregion
+      const streamController = new AbortController();
+      ttsAbortControllerRef.current = streamController;
+      setLastHeardText("");
       suppressMicFor(fallbackMs);
-      try {
+
+      const base64ToArrayBuffer = (b64: string) => {
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      };
+
+      let ctx = ttsAudioContextRef.current;
+      if (!ctx || ctx.state === "closed") {
+        ctx = new AudioContext();
+        ttsAudioContextRef.current = ctx;
+      }
+
+      const playFullTtsFallback = async () => {
         const result = await window.desktopApi.synthesizeSpeech(cleanText, backendBaseUrl);
         if ("error" in result) {
           addMessage("system", `TTS unavailable: ${result.error}`);
@@ -430,49 +503,160 @@ export default function App() {
           setAssistantSpeaking(false);
           return;
         }
-        const binary = atob(b64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-        let ctx = ttsAudioContextRef.current;
-        if (!ctx || ctx.state === "closed") {
-          ctx = new AudioContext();
-          ttsAudioContextRef.current = ctx;
-        }
-        if (ttsSourceRef.current) {
-          try {
-            ttsSourceRef.current.stop();
-          } catch {
-            /* ended */
-          }
-          ttsSourceRef.current = null;
-        }
-        const buffer = await ctx.decodeAudioData(copy);
+        if (ttsGenerationRef.current !== generation) return;
+        const buffer = await ctx.decodeAudioData(base64ToArrayBuffer(b64));
+        if (ttsGenerationRef.current !== generation) return;
         const durationMs = Math.ceil(buffer.duration * 1000);
-        suppressMicFor(durationMs + 1400);
+        suppressMicFor(durationMs + 2500);
         const source = ctx.createBufferSource();
         source.buffer = buffer;
         source.connect(ctx.destination);
+        ttsSourceRef.current = source;
+        ttsScheduledSourcesRef.current = [source];
         source.onended = () => {
+          try {
+            source.disconnect();
+          } catch {
+            /* already disconnected */
+          }
+          ttsScheduledSourcesRef.current = ttsScheduledSourcesRef.current.filter((item) => item !== source);
+          if (ttsGenerationRef.current !== generation) return;
+          assistantSpeakingRef.current = false;
+          setAssistantSpeaking(false);
+          suppressMicFor(1500);
+          if (ttsSourceRef.current === source) {
+            ttsSourceRef.current = null;
+          }
+        };
+        await ctx.resume();
+        if (ttsGenerationRef.current !== generation) return;
+        assistantSpeakingRef.current = true;
+        setAssistantSpeaking(true);
+        suppressMicFor(1500);
+        source.start(0);
+      };
+
+      try {
+        const response = await fetch(`${backendBaseUrl.replace(/\/+$/, "")}/api/tts/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: cleanText }),
+          signal: streamController.signal,
+        });
+
+        // #region agent log
+        addMessage("system", `[DBG-C] stream fetch: status=${response.status} ok=${response.ok} hasBody=${!!response.body} gen=${generation} curGen=${ttsGenerationRef.current}`);
+        console.log('[DBG-C] stream fetch result', {status:response.status, ok:response.ok, hasBody:!!response.body, capturedGen:generation, currentGen:ttsGenerationRef.current});
+        // #endregion
+        if (!response.ok || !response.body) {
+          throw new Error(`Streaming TTS failed ${response.status}: ${response.statusText || "unavailable"}`);
+        }
+
+        await ctx.resume();
+        if (ttsGenerationRef.current !== generation) return;
+        assistantSpeakingRef.current = true;
+        setAssistantSpeaking(true);
+        suppressMicFor(1500);
+        // #region agent log
+        addMessage("system", `[DBG-D] stream reading: ctxState=${ctx.state} gen=${generation} curGen=${ttsGenerationRef.current}`);
+        console.log('[DBG-D] stream reading started', {ctxState:ctx.state, capturedGen:generation, currentGen:ttsGenerationRef.current});
+        // #endregion
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let bufferText = "";
+        let scheduledTime = ctx.currentTime + 0.08;
+        let scheduledCount = 0;
+        let endedCount = 0;
+        let streamDone = false;
+
+        const finishIfComplete = () => {
+          if (!streamDone || endedCount < scheduledCount || ttsGenerationRef.current !== generation) return;
           setAssistantSpeaking(false);
           suppressMicFor(850);
           ttsSourceRef.current = null;
         };
-        setAssistantSpeaking(false);
-        await ctx.resume();
-        setAssistantSpeaking(true);
-        suppressMicFor(1200);
-        source.start(0);
-        ttsSourceRef.current = source;
+
+        const scheduleChunk = async (audioBase64: string) => {
+          if (!audioBase64 || ttsGenerationRef.current !== generation) return;
+          const audioBuffer = await ctx.decodeAudioData(base64ToArrayBuffer(audioBase64));
+          if (ttsGenerationRef.current !== generation) return;
+          const source = ctx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(ctx.destination);
+          const startAt = Math.max(scheduledTime, ctx.currentTime + 0.02);
+          scheduledTime = startAt + audioBuffer.duration;
+          scheduledCount += 1;
+          ttsSourceRef.current = source;
+          ttsScheduledSourcesRef.current.push(source);
+          suppressMicFor(Math.ceil((scheduledTime - ctx.currentTime) * 1000) + 900);
+          source.onended = () => {
+            try {
+              source.disconnect();
+            } catch {
+              /* already disconnected */
+            }
+            ttsScheduledSourcesRef.current = ttsScheduledSourcesRef.current.filter((item) => item !== source);
+            endedCount += 1;
+            finishIfComplete();
+          };
+          source.start(startAt);
+        };
+
+        const handleLine = async (line: string) => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+          const payload = JSON.parse(trimmed) as TtsStreamEvent;
+          if (payload.type === "audio_chunk") {
+            await scheduleChunk(payload.audio_base64 ?? "");
+            return;
+          }
+          if (payload.type === "done") {
+            streamDone = true;
+            finishIfComplete();
+          }
+        };
+
+        while (ttsGenerationRef.current === generation) {
+          const { done, value } = await reader.read();
+          bufferText += decoder.decode(value, { stream: !done });
+          const lines = bufferText.split("\n");
+          bufferText = lines.pop() ?? "";
+          for (const line of lines) {
+            await handleLine(line);
+          }
+          if (done) break;
+        }
+
+        if (bufferText.trim()) {
+          await handleLine(bufferText);
+        }
+        streamDone = true;
+        finishIfComplete();
       } catch (e) {
+        // #region agent log
+        const _dbgStreamErr = e instanceof Error ? e.message : String(e);
+        addMessage("system", `[DBG-F] stream catch: aborted=${streamController.signal.aborted} genMatch=${ttsGenerationRef.current===generation} err="${_dbgStreamErr.slice(0,80)}"`);
+        console.log('[DBG-F] stream catch', {aborted:streamController.signal.aborted, genMatch:ttsGenerationRef.current===generation, err:_dbgStreamErr});
+        // #endregion
+        if (streamController.signal.aborted || ttsGenerationRef.current !== generation) return;
+        try {
+          await playFullTtsFallback();
+          return;
+        } catch (fallbackError) {
+          const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : "playback failed";
+          addMessage("system", `TTS playback error: ${fallbackMsg}`);
+        }
         const msg = e instanceof Error ? e.message : "playback failed";
-        addMessage("system", `TTS playback error: ${msg}`);
+        logPerf("tts.stream_fallback", { error: msg });
         setAssistantSpeaking(false);
+      } finally {
+        if (ttsAbortControllerRef.current === streamController) {
+          ttsAbortControllerRef.current = null;
+        }
       }
     },
-    [addMessage, backendBaseUrl, suppressMicFor],
+    [addMessage, backendBaseUrl, logPerf, stopCurrentTts, suppressMicFor],
   );
 
   const sendText = useCallback(async function sendTextImpl(
@@ -482,6 +666,9 @@ export default function App() {
   ) {
     const text = raw.trim();
     if (!text) return;
+    // #region agent log
+    addMessage("system", `[DBG-I] sendText entry: speakModeOn=${speakModeOn} text="${text.slice(0,60)}"`);
+    // #endregion
     const requestStart = performance.now();
     if (!suppressUserMessage) {
       addMessage("user", text);
@@ -500,6 +687,10 @@ export default function App() {
       const reply = extractAssistantText(result.data);
       const fallbackMeta = extractFallbackMeta(result.data);
       addMessage("assistant", reply);
+      // #region agent log
+      addMessage("system", `[DBG-A] sendText reply: speakModeOn=${speakModeOn} hasFallback=${!!fallbackMeta} replyLen=${reply.length} snippet="${reply.slice(0,50)}"`);
+      console.log('[DBG-A] sendText reply', {speakModeOn, hasFallbackMeta:!!fallbackMeta, reply:reply.slice(0,80)});
+      // #endregion
       if (fallbackMeta && provider !== "ollama") {
         const providerName = fallbackMeta.chatbot_provider ?? "huggingface";
         setPendingConfirm({
@@ -569,23 +760,48 @@ export default function App() {
   const processVoiceQueue = useCallback(async () => {
     if (voiceWorkerActiveRef.current) return;
     voiceWorkerActiveRef.current = true;
+    // #region agent log
+    addMessage("system", `[DBG-K] processVoiceQueue start: queueLen=${pendingLocalSegmentsRef.current.length} micOn=${micOnRef.current} suppressed=${Date.now()<micSuppressUntilRef.current}`);
+    // #endregion
     localTranscribeBusyRef.current = true;
     setLocalTranscribeBusy(true);
     try {
       while (pendingLocalSegmentsRef.current.length > 0 && micOnRef.current) {
         const nextSegment = pendingLocalSegmentsRef.current.shift();
         if (!nextSegment || isMicSuppressed()) {
+          // #region agent log
+          addMessage("system", `[DBG-K2] segment skipped in queue: suppressed=${isMicSuppressed()} nextSegment=${!!nextSegment}`);
+          // #endregion
           continue;
         }
-        const pcm = downsampleTo16BitPcm(nextSegment.audio, nextSegment.inputSampleRate, 16000);
+        // #region agent log
+        let pcm: Int16Array;
+        try {
+          pcm = downsampleTo16BitPcm(nextSegment.audio, nextSegment.inputSampleRate, 16000);
+        } catch (dsErr) {
+          addMessage("system", `[DBG-L] downsample threw: ${dsErr}`);
+          continue;
+        }
+        addMessage("system", `[DBG-L] pcmLen=${pcm.length} inputSR=${nextSegment.inputSampleRate}`);
+        // #endregion
         if (pcm.length < 8000) {
+          addMessage("system", `[DBG-L2] pcm too short (${pcm.length}), skipping`);
           continue;
         }
         const encodeStart = performance.now();
         const wavBytes = wavBytesFromPcm16(pcm, 16000);
         const encodedMs = performance.now() - encodeStart;
-        if (voiceprintStatus?.enabled) {
-          const verifyResponse = await window.desktopApi.verifyVoiceprint(wavBytes, backendBaseUrl);
+        // #region agent log
+        addMessage("system", `[DBG-L3] wavBytes ready len=${wavBytes.length} voiceprintEnabled=${voiceprintStatus?.enabled ?? false}`);
+        // #endregion
+        if (voiceprintStatus?.enabled && voiceprintEnabled && !speakModeOn) {
+          let verifyResponse: Awaited<ReturnType<typeof window.desktopApi.verifyVoiceprint>>;
+          try {
+            verifyResponse = await window.desktopApi.verifyVoiceprint(wavBytes, backendBaseUrl);
+          } catch (vpErr) {
+            addMessage("system", `[DBG-VP] verifyVoiceprint threw: ${vpErr}`);
+            continue;
+          }
           if ("error" in verifyResponse) {
             addMessage("system", `Voice verification error: ${verifyResponse.error}`);
             continue;
@@ -595,21 +811,49 @@ export default function App() {
               score: verifyResponse.data.score,
               threshold: verifyResponse.data.threshold,
             });
+            // #region agent log
+            addMessage("system", `[DBG-VP2] voiceprint REJECTED: score=${verifyResponse.data.score?.toFixed(3)} threshold=${verifyResponse.data.threshold?.toFixed(3)}`);
+            // #endregion
+            addMessage("system", `Voice not recognized (score ${verifyResponse.data.score?.toFixed(2)} < threshold ${verifyResponse.data.threshold?.toFixed(2)}). Disable voiceprint in Settings or re-enroll.`);
             continue;
           }
         }
         const transcribeStart = performance.now();
-        const response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
+        // #region agent log
+        addMessage("system", `[DBG-M] calling transcribeAudio wavLen=${wavBytes.length} hasFn=${typeof window.desktopApi?.transcribeAudio}`);
+        // #endregion
+        let response: Awaited<ReturnType<typeof window.desktopApi.transcribeAudio>>;
+        try {
+          response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
+        } catch (transcribeEx) {
+          addMessage("system", `[DBG-M2] transcribeAudio threw: ${transcribeEx}`);
+          continue;
+        }
+        addMessage("system", `[DBG-M3] transcribeAudio done: hasError=${"error" in response}`);
         const transcribeMs = performance.now() - transcribeStart;
         if ("error" in response) {
           addMessage("system", `Transcription error: ${response.error}`);
           continue;
         }
         const transcript = (response.data.text ?? "").trim();
+        // #region agent log
+        addMessage("system", `[DBG-G] transcript="${transcript.slice(0,60)}" suppressed=${isMicSuppressed()} voiceLock=${voiceLockEnabled}`);
+        // #endregion
         if (!transcript || isMicSuppressed()) {
           continue;
         }
-        const commandText = sanitizeVoiceCommand(transcript, voiceLockEnabled);
+        // Drop likely noise artifacts: single short words (≤3 letters) that
+        // are too brief to be real commands — common when TTS audio bleeds into the mic.
+        const _transcriptWords = transcript.replace(/[^a-zA-Z ]/g, " ").trim().split(/\s+/).filter(Boolean);
+        if (_transcriptWords.length === 1 && _transcriptWords[0].length <= 3) {
+          continue;
+        }
+        setLastHeardText(transcript);
+        // In speak mode the user has explicitly opened a voice session — voice lock wake-word is not needed
+        const commandText = sanitizeVoiceCommand(transcript, voiceLockEnabled && !speakModeOn);
+        // #region agent log
+        addMessage("system", `[DBG-H] commandText="${(commandText??'').slice(0,60)}" filtered=${!commandText}`);
+        // #endregion
         if (!commandText) {
           const now = Date.now();
           if (voiceLockEnabled && now - wakeHintShownAtRef.current > 7000) {
@@ -643,9 +887,17 @@ export default function App() {
       setLocalTranscribeBusy(false);
       voiceWorkerActiveRef.current = false;
     }
-  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, voiceLockEnabled, voiceprintStatus?.enabled]);
+  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, speakModeOn, voiceLockEnabled, voiceprintStatus?.enabled]);
 
   const enqueueLocalSegment = useCallback((audio: Float32Array, inputSampleRate: number) => {
+    // #region agent log
+    const _dbgNow = Date.now();
+    const _dbgSuppressed = _dbgNow < micSuppressUntilRef.current;
+    console.log('[DBG-E] enqueueLocalSegment', {micOn:micOnRef.current, suppressed:_dbgSuppressed, suppressUntil:micSuppressUntilRef.current, nowMs:_dbgNow, audioLen:audio.length});
+    if (_dbgSuppressed || !micOnRef.current) {
+      addMessage("system", `[DBG-E] segment DROPPED: micOn=${micOnRef.current} suppressed=${_dbgSuppressed} suppressUntil=${micSuppressUntilRef.current} now=${_dbgNow} diff=${micSuppressUntilRef.current - _dbgNow}ms`);
+    }
+    // #endregion
     if (!micOnRef.current || isMicSuppressed()) return;
     if (voiceprintEnrollStateRef.current.active) {
       enrollmentPhraseBufferRef.current.push({ audio, inputSampleRate });
@@ -694,6 +946,17 @@ export default function App() {
 
       processor.onaudioprocess = (event) => {
         if (!micOnRef.current) return;
+        const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
+        let energy = 0;
+        for (let i = 0; i < chunk.length; i += 1) {
+          energy += chunk[i] * chunk[i];
+        }
+        const rms = Math.sqrt(energy / chunk.length);
+
+        if (assistantSpeakingRef.current && rms >= MIC_TRIGGER_RMS) {
+          stopCurrentTts();
+        }
+
         if (isMicSuppressed()) {
           setVoiceDetected(false);
           state.chunks = [];
@@ -706,12 +969,6 @@ export default function App() {
           state.cooldownUntilMs = Math.max(state.cooldownUntilMs, Date.now() + MIC_SEND_COOLDOWN_MS);
           return;
         }
-        const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
-        let energy = 0;
-        for (let i = 0; i < chunk.length; i += 1) {
-          energy += chunk[i] * chunk[i];
-        }
-        const rms = Math.sqrt(energy / chunk.length);
 
         const nowMs = Date.now();
         const preRollMaxSamples = Math.floor(state.context.sampleRate * MIC_PRE_ROLL_SECONDS);
@@ -762,6 +1019,9 @@ export default function App() {
           state.silenceSampleCount = 0;
           state.cooldownUntilMs = nowMs + MIC_SEND_COOLDOWN_MS;
           if (speechSeconds >= MIC_SEGMENT_MIN_SECONDS) {
+            // #region agent log
+            addMessage("system", `[DBG-J] VAD emitting segment: speechSec=${speechSeconds.toFixed(2)} silSec=${silenceSeconds.toFixed(2)} mergedLen=${merged.length}`);
+            // #endregion
             enqueueLocalSegment(merged, state.context.sampleRate);
           }
         }
@@ -782,7 +1042,7 @@ export default function App() {
       addMessage("system", `Mic access error: ${message}`);
       setMicOn(false);
     }
-  }, [addMessage, enqueueLocalSegment, isMicSuppressed]);
+  }, [addMessage, enqueueLocalSegment, isMicSuppressed, stopCurrentTts]);
 
   const startMicRecognition = useCallback(() => {
     if (recognitionRef.current) return;
@@ -822,6 +1082,7 @@ export default function App() {
         if (result.isFinal) {
           const transcript = result[0]?.transcript?.trim() ?? "";
           if (transcript && !isMicSuppressed()) {
+            setLastHeardText(transcript);
             const commandText = sanitizeVoiceCommand(transcript, voiceLockEnabled);
             if (commandText) {
               void sendText(commandText);
@@ -895,6 +1156,14 @@ export default function App() {
   }, [speakModeOn]);
 
   useEffect(() => {
+    if (!speakModeOn) {
+      setLastHeardText("");
+      return;
+    }
+    void speakAssistant("I'm listening.");
+  }, [speakAssistant, speakModeOn]);
+
+  useEffect(() => {
     if (micOn) {
       startMicRecognition();
       return;
@@ -906,18 +1175,10 @@ export default function App() {
   useEffect(() => () => {
     stopMicRecognition();
     stopLocalMicCapture();
-    if (ttsSourceRef.current) {
-      try {
-        ttsSourceRef.current.stop();
-      } catch {
-        /* ended */
-      }
-      ttsSourceRef.current = null;
-    }
+    stopCurrentTts();
     void ttsAudioContextRef.current?.close();
     ttsAudioContextRef.current = null;
-    setAssistantSpeaking(false);
-  }, [stopLocalMicCapture, stopMicRecognition]);
+  }, [stopCurrentTts, stopLocalMicCapture, stopMicRecognition]);
 
   const loadTerminals = async () => {
     setTerminalsLoading(true);
@@ -943,7 +1204,7 @@ export default function App() {
   const voiceprintSummary = voiceprintEnrollState.active
     ? `enrolling ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
     : voiceprintStatus?.enabled
-      ? "enabled"
+      ? voiceprintEnabled ? "enabled" : "disabled"
       : "not set";
 
   const toggleSettings = () => {
@@ -977,8 +1238,7 @@ export default function App() {
 
   const exitSpeakMode = () => {
     setSpeakModeOn(false);
-    window.speechSynthesis.cancel();
-    setAssistantSpeaking(false);
+    stopCurrentTts();
     setVoiceDetected(false);
   };
 
@@ -1028,11 +1288,13 @@ export default function App() {
       {settingsOpen ? (
         <SettingsPanel
           voiceprintStatus={voiceprintStatus}
+          voiceprintEnabled={voiceprintEnabled}
           voiceprintEnrollState={voiceprintEnrollState}
           enrollmentPrompt={voiceprintEnrollmentPrompt(voiceprintEnrollState)}
           enrollmentPhraseReady={enrollmentPhraseReady}
           enrollmentSubmitBusy={enrollmentSubmitBusy}
           voiceDetected={voiceDetected}
+          onToggleVoiceprint={() => setVoiceprintEnabled((v) => !v)}
           onStartOrRedoVoiceprint={() => void handleStartOrRedoVoiceprint()}
           onSubmitEnrollmentPhrase={() => void submitEnrollmentPhrase()}
           onRefresh={() => void refreshAll()}
@@ -1081,8 +1343,7 @@ export default function App() {
           onToggleSpeakMode={() => {
             setSpeakModeOn((value) => !value);
             if (speakModeOn) {
-              window.speechSynthesis.cancel();
-              setAssistantSpeaking(false);
+              stopCurrentTts();
             }
           }}
         />
@@ -1092,9 +1353,13 @@ export default function App() {
         <SpeakModeControls
           voiceStatus={voiceStatus}
           voiceStatusLabel={voiceStatusLabel}
+          assistantSpeaking={assistantSpeaking}
+          lastHeardText={lastHeardText}
+          voiceDetected={voiceDetected}
           micOn={micOn}
           backendOnline={health.backend.ok}
           onToggleMic={() => setMicOn((value) => !value)}
+          onStopTts={stopCurrentTts}
           onExitSpeakMode={exitSpeakMode}
         />
       ) : null}

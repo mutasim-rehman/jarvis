@@ -9,6 +9,7 @@ import asyncio
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -30,6 +31,15 @@ app = FastAPI(
     title="JARVIS Backend API",
     version=SCHEMA_VERSION,
     description="Phase 1: natural language → structured commands (OpenAPI for clients).",
+)
+
+# Allow the Electron renderer (localhost:5173 in dev, app:// in prod) to call
+# streaming endpoints like /api/tts/stream directly via fetch.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 logger = logging.getLogger(__name__)
 

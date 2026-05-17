@@ -210,6 +210,19 @@ def _extract_intent_from_text(content: str) -> str | None:
     return None
 
 
+_IDENTITY_RESPONSE = (
+    "I am JARVIS — your advanced AI systems assistant. "
+    "I can execute desktop commands, play music, manage assignments, fetch news, and more. "
+    "How may I assist you today, Sir?"
+)
+
+_CAPABILITY_RESPONSE = (
+    "I can play music, open apps, watch videos, fetch tech or world news, manage assignments, "
+    "start projects, run focus or morning rituals, and answer general questions. "
+    "What would you like me to do, Sir?"
+)
+
+
 def _quick_conversational_response(user_text: str) -> str | None:
     t = user_text.strip().lower()
     if not t:
@@ -219,6 +232,7 @@ def _quick_conversational_response(user_text: str) -> str | None:
     normalized = re.sub(r"\s+", " ", normalized).strip()
     words = normalized.split()
     greeting_words = {"hello", "hi", "hey", "yo", "sup"}
+
     # Fast conversational wake/greeting path: avoids unnecessary LLM latency.
     if re.fullmatch(r"(wake\s*up|wake up jarvis|jarvis|hey jarvis|hello|hi|good (morning|afternoon|evening))", t):
         return "At your service, Sir. How may I assist you today?"
@@ -227,6 +241,27 @@ def _quick_conversational_response(user_text: str) -> str | None:
             return "At your service, Sir. How may I assist you today?"
     if normalized in {"good morning jarvis", "good afternoon jarvis", "good evening jarvis"}:
         return "At your service, Sir. How may I assist you today?"
+
+    # Identity / capability questions — deterministic, no LLM needed.
+    identity_patterns = re.compile(
+        r"\b(who are you|what are you|introduce yourself|your name|what is your name"
+        r"|are you (ai|an ai|a bot|jarvis)|what('s| is) jarvis)\b"
+    )
+    if identity_patterns.search(normalized):
+        return _IDENTITY_RESPONSE
+
+    capability_patterns = re.compile(
+        r"\b(what can you do|what (do|can) you (help|assist)|your (capabilities|features|functions|abilities)"
+        r"|how (do you|can you) help|what are your (skills|abilities))\b"
+    )
+    if capability_patterns.search(normalized):
+        return _CAPABILITY_RESPONSE
+
+    # Acknowledgements — no action needed.
+    if normalized in {"thank you", "thanks", "thank you jarvis", "thanks jarvis", "ok", "okay",
+                      "got it", "alright", "sure", "cool", "nice", "great"}:
+        return "Of course, Sir. Anything else?"
+
     return None
 
 

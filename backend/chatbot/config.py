@@ -20,7 +20,7 @@ def _space_id_from_link(link: str) -> str:
 
 
 class ChatbotSettings(BaseSettings):
-    primary_provider: str = (os.getenv("CHAT_PRIMARY_PROVIDER", "huggingface").strip().lower() or "huggingface")
+    chat_primary_provider: str = "huggingface"
     timeout_seconds: float = float(os.getenv("CHAT_TIMEOUT_SECONDS", "45"))
 
     hf_space_link: str = os.getenv("HF_SPACE_LINK", "").strip()
@@ -34,6 +34,8 @@ class ChatbotSettings(BaseSettings):
 
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2:1b").strip()
+
+    google_gemini_key: str = os.getenv("GOOGLE_GEMINI_KEY", "").strip()
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
