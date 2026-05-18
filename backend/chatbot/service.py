@@ -1,13 +1,9 @@
-import json
-import os
 from typing import Any
 
 import httpx
 import time
 
 from .config import settings
-
-_DBG_LOG = os.path.join(os.path.dirname(__file__), "..", "..", "debug-0394a8.log")
 
 
 _OLLAMA_HEALTH_TTL_SECONDS = 5.0
@@ -54,32 +50,12 @@ async def generate_chat(
     preferred_provider: str | None = None,
 ) -> dict[str, Any]:
     provider = (preferred_provider or settings.chat_primary_provider or "huggingface").strip().lower()
-    # Auto-upgrade: prefer Gemini (fast cloud) then Ollama (local) when HuggingFace is the default
-    if preferred_provider is None and provider == "huggingface":
-        if settings.google_gemini_key:
-            provider = "gemini"
-        elif await _is_ollama_available():
-            provider = "ollama"
-    # #region agent log
-    try:
-        with open(_DBG_LOG, "a") as _f:
-            _f.write(json.dumps({"sessionId": "0394a8", "location": "service.py:generate_chat", "message": "[DBG-PROVIDER] selected provider", "data": {"provider": provider, "configured": settings.chat_primary_provider, "has_gemini_key": bool(settings.google_gemini_key)}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except Exception:
-        pass
-    # #endregion
     if provider == "ollama":
         return await _call_ollama(messages=messages, format=format)
     if provider == "gemini":
         try:
             return await _call_gemini(messages=messages, format=format)
-        except RuntimeError as exc:
-            # #region agent log
-            try:
-                with open(_DBG_LOG, "a") as _f:
-                    _f.write(json.dumps({"sessionId": "0394a8", "location": "service.py:generate_chat", "message": "[DBG-FALLBACK] gemini failed, trying ollama", "data": {"err": str(exc)[:200]}, "timestamp": int(time.time() * 1000)}) + "\n")
-            except Exception:
-                pass
-            # #endregion
+        except RuntimeError:
             # Auto-fallback to Ollama if available (no explicit provider requested)
             if preferred_provider is None and await _is_ollama_available():
                 return await _call_ollama(messages=messages, format=format)

@@ -466,10 +466,6 @@ export default function App() {
       const fallbackMs = Math.min(18000, Math.max(1200, wordCount * 340 + 900));
       stopCurrentTts();
       const generation = ttsGenerationRef.current;
-      // #region agent log
-      addMessage("system", `[DBG-B] speakAssistant entry: gen=${generation} text="${cleanText.slice(0,40)}"`);
-      console.log('[DBG-B] speakAssistant entry', {generation, genAfterStop:ttsGenerationRef.current, text:cleanText.slice(0,80)});
-      // #endregion
       const streamController = new AbortController();
       ttsAbortControllerRef.current = streamController;
       setLastHeardText("");
@@ -544,10 +540,6 @@ export default function App() {
           signal: streamController.signal,
         });
 
-        // #region agent log
-        addMessage("system", `[DBG-C] stream fetch: status=${response.status} ok=${response.ok} hasBody=${!!response.body} gen=${generation} curGen=${ttsGenerationRef.current}`);
-        console.log('[DBG-C] stream fetch result', {status:response.status, ok:response.ok, hasBody:!!response.body, capturedGen:generation, currentGen:ttsGenerationRef.current});
-        // #endregion
         if (!response.ok || !response.body) {
           throw new Error(`Streaming TTS failed ${response.status}: ${response.statusText || "unavailable"}`);
         }
@@ -557,10 +549,6 @@ export default function App() {
         assistantSpeakingRef.current = true;
         setAssistantSpeaking(true);
         suppressMicFor(1500);
-        // #region agent log
-        addMessage("system", `[DBG-D] stream reading: ctxState=${ctx.state} gen=${generation} curGen=${ttsGenerationRef.current}`);
-        console.log('[DBG-D] stream reading started', {ctxState:ctx.state, capturedGen:generation, currentGen:ttsGenerationRef.current});
-        // #endregion
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -634,11 +622,6 @@ export default function App() {
         streamDone = true;
         finishIfComplete();
       } catch (e) {
-        // #region agent log
-        const _dbgStreamErr = e instanceof Error ? e.message : String(e);
-        addMessage("system", `[DBG-F] stream catch: aborted=${streamController.signal.aborted} genMatch=${ttsGenerationRef.current===generation} err="${_dbgStreamErr.slice(0,80)}"`);
-        console.log('[DBG-F] stream catch', {aborted:streamController.signal.aborted, genMatch:ttsGenerationRef.current===generation, err:_dbgStreamErr});
-        // #endregion
         if (streamController.signal.aborted || ttsGenerationRef.current !== generation) return;
         try {
           await playFullTtsFallback();
@@ -666,9 +649,6 @@ export default function App() {
   ) {
     const text = raw.trim();
     if (!text) return;
-    // #region agent log
-    addMessage("system", `[DBG-I] sendText entry: speakModeOn=${speakModeOn} text="${text.slice(0,60)}"`);
-    // #endregion
     const requestStart = performance.now();
     if (!suppressUserMessage) {
       addMessage("user", text);
@@ -687,10 +667,6 @@ export default function App() {
       const reply = extractAssistantText(result.data);
       const fallbackMeta = extractFallbackMeta(result.data);
       addMessage("assistant", reply);
-      // #region agent log
-      addMessage("system", `[DBG-A] sendText reply: speakModeOn=${speakModeOn} hasFallback=${!!fallbackMeta} replyLen=${reply.length} snippet="${reply.slice(0,50)}"`);
-      console.log('[DBG-A] sendText reply', {speakModeOn, hasFallbackMeta:!!fallbackMeta, reply:reply.slice(0,80)});
-      // #endregion
       if (fallbackMeta && provider !== "ollama") {
         const providerName = fallbackMeta.chatbot_provider ?? "huggingface";
         setPendingConfirm({
@@ -760,46 +736,32 @@ export default function App() {
   const processVoiceQueue = useCallback(async () => {
     if (voiceWorkerActiveRef.current) return;
     voiceWorkerActiveRef.current = true;
-    // #region agent log
-    addMessage("system", `[DBG-K] processVoiceQueue start: queueLen=${pendingLocalSegmentsRef.current.length} micOn=${micOnRef.current} suppressed=${Date.now()<micSuppressUntilRef.current}`);
-    // #endregion
     localTranscribeBusyRef.current = true;
     setLocalTranscribeBusy(true);
     try {
       while (pendingLocalSegmentsRef.current.length > 0 && micOnRef.current) {
         const nextSegment = pendingLocalSegmentsRef.current.shift();
         if (!nextSegment || isMicSuppressed()) {
-          // #region agent log
-          addMessage("system", `[DBG-K2] segment skipped in queue: suppressed=${isMicSuppressed()} nextSegment=${!!nextSegment}`);
-          // #endregion
           continue;
         }
-        // #region agent log
         let pcm: Int16Array;
         try {
           pcm = downsampleTo16BitPcm(nextSegment.audio, nextSegment.inputSampleRate, 16000);
-        } catch (dsErr) {
-          addMessage("system", `[DBG-L] downsample threw: ${dsErr}`);
+        } catch {
           continue;
         }
-        addMessage("system", `[DBG-L] pcmLen=${pcm.length} inputSR=${nextSegment.inputSampleRate}`);
-        // #endregion
         if (pcm.length < 8000) {
-          addMessage("system", `[DBG-L2] pcm too short (${pcm.length}), skipping`);
           continue;
         }
         const encodeStart = performance.now();
         const wavBytes = wavBytesFromPcm16(pcm, 16000);
         const encodedMs = performance.now() - encodeStart;
-        // #region agent log
-        addMessage("system", `[DBG-L3] wavBytes ready len=${wavBytes.length} voiceprintEnabled=${voiceprintStatus?.enabled ?? false}`);
-        // #endregion
         if (voiceprintStatus?.enabled && voiceprintEnabled && !speakModeOn) {
           let verifyResponse: Awaited<ReturnType<typeof window.desktopApi.verifyVoiceprint>>;
           try {
             verifyResponse = await window.desktopApi.verifyVoiceprint(wavBytes, backendBaseUrl);
           } catch (vpErr) {
-            addMessage("system", `[DBG-VP] verifyVoiceprint threw: ${vpErr}`);
+            addMessage("system", `Voice verification error: ${vpErr instanceof Error ? vpErr.message : String(vpErr)}`);
             continue;
           }
           if ("error" in verifyResponse) {
@@ -811,49 +773,36 @@ export default function App() {
               score: verifyResponse.data.score,
               threshold: verifyResponse.data.threshold,
             });
-            // #region agent log
-            addMessage("system", `[DBG-VP2] voiceprint REJECTED: score=${verifyResponse.data.score?.toFixed(3)} threshold=${verifyResponse.data.threshold?.toFixed(3)}`);
-            // #endregion
             addMessage("system", `Voice not recognized (score ${verifyResponse.data.score?.toFixed(2)} < threshold ${verifyResponse.data.threshold?.toFixed(2)}). Disable voiceprint in Settings or re-enroll.`);
             continue;
           }
         }
         const transcribeStart = performance.now();
-        // #region agent log
-        addMessage("system", `[DBG-M] calling transcribeAudio wavLen=${wavBytes.length} hasFn=${typeof window.desktopApi?.transcribeAudio}`);
-        // #endregion
         let response: Awaited<ReturnType<typeof window.desktopApi.transcribeAudio>>;
         try {
           response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
         } catch (transcribeEx) {
-          addMessage("system", `[DBG-M2] transcribeAudio threw: ${transcribeEx}`);
+          addMessage("system", `Transcription error: ${transcribeEx instanceof Error ? transcribeEx.message : String(transcribeEx)}`);
           continue;
         }
-        addMessage("system", `[DBG-M3] transcribeAudio done: hasError=${"error" in response}`);
         const transcribeMs = performance.now() - transcribeStart;
         if ("error" in response) {
           addMessage("system", `Transcription error: ${response.error}`);
           continue;
         }
         const transcript = (response.data.text ?? "").trim();
-        // #region agent log
-        addMessage("system", `[DBG-G] transcript="${transcript.slice(0,60)}" suppressed=${isMicSuppressed()} voiceLock=${voiceLockEnabled}`);
-        // #endregion
         if (!transcript || isMicSuppressed()) {
           continue;
         }
         // Drop likely noise artifacts: single short words (≤3 letters) that
         // are too brief to be real commands — common when TTS audio bleeds into the mic.
-        const _transcriptWords = transcript.replace(/[^a-zA-Z ]/g, " ").trim().split(/\s+/).filter(Boolean);
-        if (_transcriptWords.length === 1 && _transcriptWords[0].length <= 3) {
+        const transcriptWords = transcript.replace(/[^a-zA-Z ]/g, " ").trim().split(/\s+/).filter(Boolean);
+        if (transcriptWords.length === 1 && transcriptWords[0].length <= 3) {
           continue;
         }
         setLastHeardText(transcript);
         // In speak mode the user has explicitly opened a voice session — voice lock wake-word is not needed
         const commandText = sanitizeVoiceCommand(transcript, voiceLockEnabled && !speakModeOn);
-        // #region agent log
-        addMessage("system", `[DBG-H] commandText="${(commandText??'').slice(0,60)}" filtered=${!commandText}`);
-        // #endregion
         if (!commandText) {
           const now = Date.now();
           if (voiceLockEnabled && now - wakeHintShownAtRef.current > 7000) {
@@ -890,14 +839,6 @@ export default function App() {
   }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, speakModeOn, voiceLockEnabled, voiceprintStatus?.enabled]);
 
   const enqueueLocalSegment = useCallback((audio: Float32Array, inputSampleRate: number) => {
-    // #region agent log
-    const _dbgNow = Date.now();
-    const _dbgSuppressed = _dbgNow < micSuppressUntilRef.current;
-    console.log('[DBG-E] enqueueLocalSegment', {micOn:micOnRef.current, suppressed:_dbgSuppressed, suppressUntil:micSuppressUntilRef.current, nowMs:_dbgNow, audioLen:audio.length});
-    if (_dbgSuppressed || !micOnRef.current) {
-      addMessage("system", `[DBG-E] segment DROPPED: micOn=${micOnRef.current} suppressed=${_dbgSuppressed} suppressUntil=${micSuppressUntilRef.current} now=${_dbgNow} diff=${micSuppressUntilRef.current - _dbgNow}ms`);
-    }
-    // #endregion
     if (!micOnRef.current || isMicSuppressed()) return;
     if (voiceprintEnrollStateRef.current.active) {
       enrollmentPhraseBufferRef.current.push({ audio, inputSampleRate });
@@ -1019,9 +960,6 @@ export default function App() {
           state.silenceSampleCount = 0;
           state.cooldownUntilMs = nowMs + MIC_SEND_COOLDOWN_MS;
           if (speechSeconds >= MIC_SEGMENT_MIN_SECONDS) {
-            // #region agent log
-            addMessage("system", `[DBG-J] VAD emitting segment: speechSec=${speechSeconds.toFixed(2)} silSec=${silenceSeconds.toFixed(2)} mergedLen=${merged.length}`);
-            // #endregion
             enqueueLocalSegment(merged, state.context.sampleRate);
           }
         }

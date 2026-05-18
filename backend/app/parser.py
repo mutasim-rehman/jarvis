@@ -151,6 +151,12 @@ def _normalize_assistant_message(message: str) -> str:
     m = message.strip()
     if len(m) >= 2 and m[0] == m[-1] and m[0] in "\"'":
         m = m[1:-1].strip()
+    # Suppress raw intent labels / structured residue that small models leak as
+    # the user-facing reply (e.g. "CHECK_ASSIGNMENTS", "OPEN_APP", "{\"intent\":...").
+    if re.fullmatch(r"[A-Z][A-Z_]*", m):
+        return ""
+    if m.startswith("{") or m.startswith("["):
+        return ""
     return m
 
 
@@ -168,6 +174,14 @@ def _extract_conversational_message(content: str) -> str:
     if idx is not None and idx > 0:
         return _normalize_assistant_message(content[:idx].strip())
     return _normalize_assistant_message(content)
+
+
+def _safe_reply(base: str, content: str, default: str = "I'm not sure how to help with that, Sir.") -> str:
+    """Return base if non-empty, else content if it looks like a real reply, else default."""
+    if base:
+        return base
+    cleaned = _normalize_assistant_message(content or "")
+    return cleaned or default
 
 
 _INTENT_LABEL_ALIASES = {
@@ -416,31 +430,31 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
             if extracted and extracted not in {"GENERAL_CHAT", "UNKNOWN"}:
                 extracted, _t = reconcile_llm_intent(text, extracted, None)
                 if should_drop_workflow_without_domain(text, extracted):
-                    return _finish(_wrap(base_message or content, None), "llm_text_dropped_without_domain", llm_ms)
+                    return _finish(_wrap(_safe_reply(base_message, content), None), "llm_text_dropped_without_domain", llm_ms)
                 if extracted in ("GENERAL_CHAT", "UNKNOWN"):
-                    return _finish(_wrap(base_message or content, None), "llm_text_general_chat", llm_ms)
+                    return _finish(_wrap(_safe_reply(base_message, content), None), "llm_text_general_chat", llm_ms)
                 cmd = _build_command(extracted, None)
                 return _finish(_wrap(base_message or "On it.", cmd), "llm_text_command", llm_ms)
             fb_intent, fb_target = _fallback_intent_from_user_text(text)
             if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
                 cmd = _build_command(fb_intent, fb_target)
                 return _finish(_wrap(base_message or "On it.", cmd), "llm_json_invalid_fallback", llm_ms)
-            return _finish(_wrap(base_message or content, None), "llm_json_invalid_informational", llm_ms)
+            return _finish(_wrap(_safe_reply(base_message, content), None), "llm_json_invalid_informational", llm_ms)
 
     extracted = _extract_intent_from_text(content)
     if extracted and extracted not in {"GENERAL_CHAT", "UNKNOWN"}:
         extracted, ext_target = reconcile_llm_intent(text, extracted, None)
         if should_drop_workflow_without_domain(text, extracted):
-            return _finish(_wrap(base_message or content, None), "llm_no_json_dropped_without_domain", llm_ms)
+            return _finish(_wrap(_safe_reply(base_message, content), None), "llm_no_json_dropped_without_domain", llm_ms)
         if extracted in ("GENERAL_CHAT", "UNKNOWN"):
-            return _finish(_wrap(base_message or content, None), "llm_no_json_general_chat", llm_ms)
+            return _finish(_wrap(_safe_reply(base_message, content), None), "llm_no_json_general_chat", llm_ms)
         cmd = _build_command(extracted, ext_target)
         return _finish(_wrap(base_message or "On it.", cmd), "llm_no_json_command", llm_ms)
 
     fb_intent, fb_target = _fallback_intent_from_user_text(text)
     if fb_intent and fb_intent not in {"GENERAL_CHAT", "UNKNOWN"}:
         cmd = _build_command(fb_intent, fb_target)
-        return _finish(_wrap(base_message or content or "On it.", cmd), "fallback_intent")
+        return _finish(_wrap(base_message or "On it.", cmd), "fallback_intent")
 
-    result = _wrap(base_message or content, None)
+    result = _wrap(_safe_reply(base_message, content), None)
     return _finish(result, "fallback_informational")
