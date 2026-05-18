@@ -87,6 +87,10 @@ async def on_startup() -> None:
     asyncio.create_task(_run_warmup_task("stt", warmup_model))
     asyncio.create_task(_run_warmup_task("tts", warmup_tts))
 
+    from backend.chatbot.warmup import warmup_hf_space
+
+    asyncio.create_task(asyncio.to_thread(warmup_hf_space))
+
 
 async def verify_dev_api_key(
     x_api_key: str | None = Header(default=None, alias=settings.api_key_header),

@@ -28,9 +28,19 @@ class ChatbotSettings(BaseSettings):
     hf_api_name: str = os.getenv("HF_API_NAME", "/respond").strip() or "/respond"
     hf_token: str = os.getenv("HF_TOKEN", "").strip()
     hf_system_message: str = os.getenv("HF_SYSTEM_MESSAGE", "").strip()
-    hf_max_tokens: float = float(os.getenv("HF_MAX_TOKENS", "512"))
+    hf_max_tokens: float = float(os.getenv("HF_MAX_TOKENS", "200"))
     hf_temperature: float = float(os.getenv("HF_TEMPERATURE", "0.7"))
     hf_top_p: float = float(os.getenv("HF_TOP_P", "0.95"))
+    hf_warmup_on_startup: bool = os.getenv("HF_WARMUP_ON_STARTUP", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    hf_use_compact_parser_prompt: bool = os.getenv("HF_USE_COMPACT_PARSER_PROMPT", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2:1b").strip()

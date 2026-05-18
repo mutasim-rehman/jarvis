@@ -16,6 +16,7 @@ from .heuristics import (
     should_drop_workflow_without_domain,
 )
 from backend.chatbot import ProviderUnavailableError, generate_chat
+from backend.chatbot.config import settings as chat_settings
 from backend.chatbot.personality import build_base_system_message
 
 ALLOWED_INTENTS = set(WORKFLOWS.keys()) | {"GENERAL_CHAT", "UNKNOWN"}
@@ -145,6 +146,35 @@ Output: "Starting Brooklyn Nine-Nine clips on YouTube for you.
   "target": "brooklyn 99 clips"
 }}"
 """
+
+COMPACT_SYSTEM_PROMPT = f"""
+{BASE_SYSTEM_PROMPT}
+
+Intent router — use ONLY these intents:
+{SUPPORTED_INTENTS_TEXT}
+- UNKNOWN
+
+Rules: plain string intent; no tasks/multi_step. No JSON for greetings or general chat.
+PLAY_MUSIC for music (target: artist:X, track:X, genre, or omit for Liked Songs).
+FETCH_TECH_NEWS / FETCH_WORLD_NEWS / WATCH_VIDEO / OPEN_APP / DO_ASSIGNMENT as named.
+DO_ASSIGNMENT target: "ref|gemini" or "ref|antigravity".
+
+Format when acting:
+<brief reply>
+{{"intent": "...", "target": "optional"}}
+
+Examples:
+User: hello → Hello, Sir. How may I assist?
+User: play jazz → {{"intent": "PLAY_MUSIC", "target": "jazz"}}
+User: tech news → I'll fetch tech headlines.\\n{{"intent": "FETCH_TECH_NEWS"}}
+"""
+
+
+def _llm_system_prompt(chat_provider: str | None) -> str:
+    provider = (chat_provider or chat_settings.chat_primary_provider or "huggingface").strip().lower()
+    if provider == "huggingface" and chat_settings.hf_use_compact_parser_prompt:
+        return COMPACT_SYSTEM_PROMPT.strip()
+    return SYSTEM_PROMPT.strip()
 
 
 def _normalize_assistant_message(message: str) -> str:
@@ -354,7 +384,7 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
         return _finish(_wrap(_forced_intent_message(cls.force_intent), cmd), "heuristic_forced")
 
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT.strip()},
+        {"role": "system", "content": _llm_system_prompt(chat_provider)},
         {"role": "user", "content": text},
     ]
 

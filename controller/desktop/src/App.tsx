@@ -708,7 +708,7 @@ export default function App() {
         }
         return next;
       });
-      await refreshHealth();
+      void refreshHealth();
     }
   }, [activeProvider, addMessage, backendBaseUrl, logPerf, refreshHealth, speakAssistant, speakModeOn]);
 
