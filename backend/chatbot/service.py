@@ -70,7 +70,20 @@ async def generate_chat(
     if provider == "ollama":
         return await _call_ollama(messages=messages, format=format)
     if provider == "gemini":
-        return await _call_gemini(messages=messages, format=format)
+        try:
+            return await _call_gemini(messages=messages, format=format)
+        except RuntimeError as exc:
+            # #region agent log
+            try:
+                with open(_DBG_LOG, "a") as _f:
+                    _f.write(json.dumps({"sessionId": "0394a8", "location": "service.py:generate_chat", "message": "[DBG-FALLBACK] gemini failed, trying ollama", "data": {"err": str(exc)[:200]}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except Exception:
+                pass
+            # #endregion
+            # Auto-fallback to Ollama if available (no explicit provider requested)
+            if preferred_provider is None and await _is_ollama_available():
+                return await _call_ollama(messages=messages, format=format)
+            raise
     if provider == "huggingface":
         return await _call_hf(messages=messages, format=format)
     raise RuntimeError(f"Unsupported chat provider: {provider}")
