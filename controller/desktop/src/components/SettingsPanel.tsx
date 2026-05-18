@@ -5,6 +5,7 @@ type VoiceprintEnrollState = {
   samplesCollected: number;
   minRequired: number;
   enrollmentPhrases: string[];
+  canFinalize: boolean;
 };
 
 type SettingsPanelProps = {
@@ -18,6 +19,7 @@ type SettingsPanelProps = {
   onToggleVoiceprint: () => void;
   onStartOrRedoVoiceprint: () => void;
   onSubmitEnrollmentPhrase: () => void;
+  onFinalizeVoiceprint: () => void;
   onRefresh: () => void;
   onOpenDevTools: () => void;
   onClose: () => void;
@@ -34,6 +36,7 @@ export function SettingsPanel({
   onToggleVoiceprint,
   onStartOrRedoVoiceprint,
   onSubmitEnrollmentPhrase,
+  onFinalizeVoiceprint,
   onRefresh,
   onOpenDevTools,
   onClose,
@@ -64,7 +67,9 @@ export function SettingsPanel({
           <strong>Voice Print</strong>
           <p>
             {voiceprintEnrollState.active
-              ? `Enrollment in progress: ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
+              ? voiceprintEnrollState.canFinalize
+                ? `Required enrollment complete: ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.enrollmentPhrases.length || voiceprintEnrollState.minRequired}`
+                : `Enrollment in progress: ${voiceprintEnrollState.samplesCollected}/${voiceprintEnrollState.minRequired}`
               : voiceprintStatus?.enabled
                 ? voiceprintEnabled
                   ? "Voice verification active."
@@ -74,8 +79,16 @@ export function SettingsPanel({
           <p className="voiceprint-prompt">
             {voiceprintEnrollState.active ? (
               <>
-                Phrase {Math.min(voiceprintEnrollState.samplesCollected + 1, voiceprintEnrollState.minRequired)} of{" "}
-                {voiceprintEnrollState.minRequired}: <q>{enrollmentPrompt ?? "…"}</q>
+                Phrase{" "}
+                {Math.min(
+                  voiceprintEnrollState.samplesCollected + 1,
+                  voiceprintEnrollState.enrollmentPhrases.length || voiceprintEnrollState.minRequired,
+                )}{" "}
+                of {voiceprintEnrollState.enrollmentPhrases.length || voiceprintEnrollState.minRequired}:{" "}
+                <q>{enrollmentPrompt ?? "…"}</q>
+                {voiceprintEnrollState.samplesCollected >= voiceprintEnrollState.minRequired ? (
+                  <> Optional room calibration helps speak mode in noisy places.</>
+                ) : null}
               </>
             ) : voiceprintStatus?.enabled ? (
               voiceprintEnabled ? (
@@ -94,7 +107,8 @@ export function SettingsPanel({
             <div className="voiceprint-enroll-actions">
               <p className="voiceprint-enroll-hint">
                 Speak the phrase at your own pace. Short pauses are fine—when you are completely done with this
-                phrase, tap Submit phrase (do not submit after every pause).
+                phrase, tap Submit phrase. After the required phrases, add the optional room samples where you
+                normally use speak mode, or finish enrollment.
               </p>
               {voiceDetected ? (
                 <p className="voiceprint-enroll-status" role="status">
@@ -109,6 +123,11 @@ export function SettingsPanel({
               >
                 {enrollmentSubmitBusy ? "Submitting…" : "Submit phrase"}
               </button>
+              {voiceprintEnrollState.canFinalize ? (
+                <button type="button" className="voiceprint-submit-phrase" onClick={onFinalizeVoiceprint}>
+                  Finish enrollment
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

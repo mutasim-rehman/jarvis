@@ -57,6 +57,7 @@ export interface VoiceprintStatus {
   enabled: boolean;
   samples_collected: number;
   min_required_samples: number;
+  target_samples?: number;
   threshold: number;
   enrollment_phrases: string[];
   next_enrollment_phrase: string;
@@ -104,6 +105,7 @@ interface DesktopApi {
         data: {
           samples_collected: number;
           min_required_samples: number;
+          target_samples?: number;
           ready_to_finalize: boolean;
           enrollment_phrases: string[];
           next_enrollment_phrase: string;

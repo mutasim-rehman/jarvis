@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     stt_whisper_language: str = "en"
     stt_whisper_vad_filter: bool = True
 
+    # Voiceprint speaker verification
+    voiceprint_verify_threshold: float = 0.0
+    voiceprint_score_mode: str = "blend"
+    voiceprint_calibration_margin: float = 0.85
+    voiceprint_threshold_floor: float = 0.58
+    voiceprint_threshold_ceiling: float = 0.78
+    voiceprint_min_probe_seconds: float = 0.45
+    voiceprint_target_rms: float = 0.07
+
     # Text-to-speech (Piper only)
     tts_provider: str = "piper"
     voice_streaming_enabled: bool = True

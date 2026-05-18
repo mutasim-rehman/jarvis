@@ -14,7 +14,7 @@ import {
   extractFallbackMeta,
   type PendingConfirm,
 } from "./appHelpers";
-import { downsampleTo16BitPcm, mergeFloat32Chunks, wavBytesFromPcm16 } from "./audioUtils";
+import { downsampleTo16BitPcm, mergeFloat32Chunks, prepareVoiceprintAudio, wavBytesFromPcm16 } from "./audioUtils";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ConversationPane } from "./components/ConversationPane";
 import { ServiceLogsPanel } from "./components/ServiceLogsPanel";
@@ -69,6 +69,7 @@ type VoiceprintEnrollState = {
   samplesCollected: number;
   minRequired: number;
   enrollmentPhrases: string[];
+  canFinalize: boolean;
 };
 
 type TtsStreamEvent =
@@ -90,6 +91,7 @@ const MIC_TRIGGER_RMS = 0.012;
 const MIC_SUSTAIN_RMS = 0.0075;
 const MIC_SEND_COOLDOWN_MS = 260;
 const MIC_DUPLICATE_WINDOW_MS = 4500;
+const SPEAK_MODE_VOICEPRINT_REQUIRED_PASSES = 2;
 const PREFER_LOCAL_MIC = true;
 export default function App() {
   const [activeView, setActiveView] = useState<AppView>("chat");
@@ -115,6 +117,7 @@ export default function App() {
     samplesCollected: 0,
     minRequired: 5,
     enrollmentPhrases: [],
+    canFinalize: false,
   });
   const [voiceprintEnabled, setVoiceprintEnabled] = useState<boolean>(
     () => localStorage.getItem("voiceprint_enabled") !== "false",
@@ -136,6 +139,7 @@ export default function App() {
   const wakeHintShownAtRef = useRef(0);
   const lastTranscriptRef = useRef("");
   const lastTranscriptAtRef = useRef(0);
+  const voiceprintConsecutivePassesRef = useRef(0);
   const micSuppressUntilRef = useRef(0);
   const perfEnabledRef = useRef(true);
   const ttsAudioContextRef = useRef<AudioContext | null>(null);
@@ -233,8 +237,9 @@ export default function App() {
     if ("error" in response) return;
     setVoiceprintStatus(response.data);
     const d = response.data;
+    const targetSamples = d.target_samples ?? d.enrollment_phrases?.length ?? d.min_required_samples;
     const partial =
-      !d.enabled && d.samples_collected > 0 && d.samples_collected < d.min_required_samples;
+      !d.enabled && d.samples_collected > 0 && d.samples_collected < targetSamples;
     setVoiceprintEnrollState((prev) => {
       if (partial) {
         return {
@@ -242,12 +247,14 @@ export default function App() {
           samplesCollected: d.samples_collected,
           minRequired: d.min_required_samples,
           enrollmentPhrases: d.enrollment_phrases?.length ? d.enrollment_phrases : prev.enrollmentPhrases,
+          canFinalize: d.samples_collected >= d.min_required_samples,
         };
       }
       return {
         ...prev,
         minRequired: d.min_required_samples,
         enrollmentPhrases: d.enrollment_phrases?.length ? d.enrollment_phrases : prev.enrollmentPhrases,
+        canFinalize: false,
       };
     });
   }, [backendBaseUrl]);
@@ -363,13 +370,31 @@ export default function App() {
     const first = enrollmentPhrases[0] ?? "";
     setVoiceprintStatus(resetResponse.data);
     clearEnrollmentPhraseBuffer();
-    setVoiceprintEnrollState({ active: true, samplesCollected: 0, minRequired, enrollmentPhrases });
+    setVoiceprintEnrollState({ active: true, samplesCollected: 0, minRequired, enrollmentPhrases, canFinalize: false });
     setMicOn(true);
     addMessage(
       "system",
-      `Voiceprint enrollment started (${minRequired} phrases). Say phrase 1 at your own pace, then use Submit phrase in Settings when finished—not after each pause. First phrase: "${first}"`,
+      `Voiceprint enrollment started (${minRequired} required phrases plus optional room calibration). Say phrase 1 at your own pace, then use Submit phrase in Settings when finished. First phrase: "${first}"`,
     );
   }, [addMessage, backendBaseUrl, clearEnrollmentPhraseBuffer]);
+
+  const finalizeVoiceprintEnrollment = useCallback(async () => {
+    const finalizeResponse = await window.desktopApi.finalizeVoiceprint(backendBaseUrl);
+    if ("error" in finalizeResponse) {
+      addMessage("system", `Voiceprint finalize error: ${finalizeResponse.error}`);
+      return;
+    }
+    setVoiceprintStatus(finalizeResponse.data);
+    setVoiceprintEnrollState((prev) => ({
+      ...prev,
+      active: false,
+      samplesCollected: finalizeResponse.data.samples_collected,
+      minRequired: finalizeResponse.data.min_required_samples,
+      canFinalize: false,
+    }));
+    voiceprintConsecutivePassesRef.current = 0;
+    addMessage("system", "Voiceprint setup complete. Speaker verification is now enabled for mic and speak mode.");
+  }, [addMessage, backendBaseUrl]);
 
   const submitEnrollmentPhrase = useCallback(async () => {
     if (enrollmentSubmitBusy || !voiceprintEnrollStateRef.current.active) return;
@@ -386,12 +411,11 @@ export default function App() {
         chunks.map((chunk) => chunk.audio),
         totalLength,
       );
-      const pcm = downsampleTo16BitPcm(merged, sampleRate, 16000);
-      if (pcm.length < 8000) {
+      const wavBytes = prepareVoiceprintAudio(merged, sampleRate);
+      if (wavBytes.length < 16044) {
         addMessage("system", "Recording too short. Speak a bit longer, then submit again.");
         return;
       }
-      const wavBytes = wavBytesFromPcm16(pcm, 16000);
       const enrollResponse = await window.desktopApi.enrollVoiceprintSample(wavBytes, backendBaseUrl);
       if ("error" in enrollResponse) {
         addMessage("system", `Voiceprint enroll error: ${enrollResponse.error}`);
@@ -401,32 +425,31 @@ export default function App() {
       const {
         samples_collected,
         min_required_samples,
+        target_samples,
         ready_to_finalize,
         enrollment_phrases,
         next_enrollment_phrase,
       } = enrollResponse.data;
+      const targetSamples = target_samples ?? enrollment_phrases?.length ?? min_required_samples;
+      const enrollmentComplete = samples_collected >= targetSamples;
       setVoiceprintEnrollState((prev) => ({
-        active: !ready_to_finalize,
+        active: !enrollmentComplete,
         samplesCollected: samples_collected,
         minRequired: min_required_samples,
         enrollmentPhrases: enrollment_phrases?.length ? enrollment_phrases : prev.enrollmentPhrases,
+        canFinalize: ready_to_finalize && !enrollmentComplete,
       }));
-      if (ready_to_finalize) {
-        const finalizeResponse = await window.desktopApi.finalizeVoiceprint(backendBaseUrl);
-        if ("error" in finalizeResponse) {
-          addMessage("system", `Voiceprint finalize error: ${finalizeResponse.error}`);
-        } else {
-          setVoiceprintStatus(finalizeResponse.data);
-          addMessage("system", "Voiceprint setup complete. Speaker verification is now enabled.");
-        }
+      if (enrollmentComplete) {
+        await finalizeVoiceprintEnrollment();
       } else {
         const nextHint = next_enrollment_phrase ? ` Next phrase: "${next_enrollment_phrase}"` : "";
-        addMessage("system", `Phrase ${samples_collected}/${min_required_samples} saved.${nextHint}`);
+        const finalizeHint = ready_to_finalize ? " You can finish now, or add the optional room calibration sample." : "";
+        addMessage("system", `Phrase ${samples_collected}/${targetSamples} saved.${nextHint}${finalizeHint}`);
       }
     } finally {
       setEnrollmentSubmitBusy(false);
     }
-  }, [addMessage, backendBaseUrl, clearEnrollmentPhraseBuffer]);
+  }, [addMessage, backendBaseUrl, clearEnrollmentPhraseBuffer, finalizeVoiceprintEnrollment]);
 
   const suppressMicFor = useCallback((ms: number) => {
     const until = Date.now() + Math.max(0, ms);
@@ -690,7 +713,7 @@ export default function App() {
         void speakAssistant(reply);
       }
       logPerf("chat.interact", {
-        provider,
+        provider: provider ?? "default",
         totalMs: (performance.now() - requestStart).toFixed(1),
       });
     } catch (e) {
@@ -756,26 +779,47 @@ export default function App() {
         const encodeStart = performance.now();
         const wavBytes = wavBytesFromPcm16(pcm, 16000);
         const encodedMs = performance.now() - encodeStart;
-        if (voiceprintStatus?.enabled && voiceprintEnabled && !speakModeOn) {
+        if (voiceprintStatus?.enabled && voiceprintEnabled) {
           let verifyResponse: Awaited<ReturnType<typeof window.desktopApi.verifyVoiceprint>>;
           try {
-            verifyResponse = await window.desktopApi.verifyVoiceprint(wavBytes, backendBaseUrl);
+            const voiceprintWavBytes = prepareVoiceprintAudio(nextSegment.audio, nextSegment.inputSampleRate);
+            verifyResponse = await window.desktopApi.verifyVoiceprint(voiceprintWavBytes, backendBaseUrl);
           } catch (vpErr) {
             addMessage("system", `Voice verification error: ${vpErr instanceof Error ? vpErr.message : String(vpErr)}`);
+            voiceprintConsecutivePassesRef.current = 0;
             continue;
           }
           if ("error" in verifyResponse) {
             addMessage("system", `Voice verification error: ${verifyResponse.error}`);
+            voiceprintConsecutivePassesRef.current = 0;
             continue;
           }
           if (!verifyResponse.data.matched) {
+            voiceprintConsecutivePassesRef.current = 0;
             logPerf("mic.voiceprint_reject", {
               score: verifyResponse.data.score,
               threshold: verifyResponse.data.threshold,
+              speakModeOn,
             });
-            addMessage("system", `Voice not recognized (score ${verifyResponse.data.score?.toFixed(2)} < threshold ${verifyResponse.data.threshold?.toFixed(2)}). Disable voiceprint in Settings or re-enroll.`);
+            const rejectMessage = `Voice not recognized (score ${verifyResponse.data.score?.toFixed(2)} < threshold ${verifyResponse.data.threshold?.toFixed(2)}). Disable voiceprint in Settings or re-enroll.`;
+            if (speakModeOn) {
+              setLastHeardText("Voice not recognized.");
+            } else {
+              addMessage("system", rejectMessage);
+            }
             continue;
           }
+          if (speakModeOn) {
+            voiceprintConsecutivePassesRef.current += 1;
+            if (voiceprintConsecutivePassesRef.current < SPEAK_MODE_VOICEPRINT_REQUIRED_PASSES) {
+              setLastHeardText("Voice recognized. Keep speaking.");
+              continue;
+            }
+          } else {
+            voiceprintConsecutivePassesRef.current = 0;
+          }
+        } else {
+          voiceprintConsecutivePassesRef.current = 0;
         }
         const transcribeStart = performance.now();
         let response: Awaited<ReturnType<typeof window.desktopApi.transcribeAudio>>;
@@ -836,7 +880,7 @@ export default function App() {
       setLocalTranscribeBusy(false);
       voiceWorkerActiveRef.current = false;
     }
-  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, speakModeOn, voiceLockEnabled, voiceprintStatus?.enabled]);
+  }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, speakModeOn, voiceLockEnabled, voiceprintEnabled, voiceprintStatus?.enabled]);
 
   const enqueueLocalSegment = useCallback((audio: Float32Array, inputSampleRate: number) => {
     if (!micOnRef.current || isMicSuppressed()) return;
@@ -1081,6 +1125,7 @@ export default function App() {
     if (!micOn) {
       micNetworkIssueNotifiedRef.current = false;
       setVoiceDetected(false);
+      voiceprintConsecutivePassesRef.current = 0;
       pendingLocalSegmentsRef.current = [];
       voiceWorkerActiveRef.current = false;
       localTranscribeBusyRef.current = false;
@@ -1090,6 +1135,7 @@ export default function App() {
 
   useEffect(() => {
     // In speak mode, keep the mic active continuously. Turn it off when speak mode ends.
+    voiceprintConsecutivePassesRef.current = 0;
     setMicOn(speakModeOn);
   }, [speakModeOn]);
 
@@ -1235,6 +1281,7 @@ export default function App() {
           onToggleVoiceprint={() => setVoiceprintEnabled((v) => !v)}
           onStartOrRedoVoiceprint={() => void handleStartOrRedoVoiceprint()}
           onSubmitEnrollmentPhrase={() => void submitEnrollmentPhrase()}
+          onFinalizeVoiceprint={() => void finalizeVoiceprintEnrollment()}
           onRefresh={() => void refreshAll()}
           onOpenDevTools={() => void window.desktopApi.openDevTools()}
           onClose={() => setActiveView("chat")}

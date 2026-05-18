@@ -50,6 +50,36 @@ export function downsampleTo16BitPcm(
   return pcm;
 }
 
+export function prepareVoiceprintAudio(input: Float32Array, inputSampleRate: number): Uint8Array {
+  let previousInput = 0;
+  let previousOutput = 0;
+  let energy = 0;
+  const highPassed = new Float32Array(input.length);
+  const rc = 1 / (2 * Math.PI * 80);
+  const dt = 1 / inputSampleRate;
+  const alpha = rc / (rc + dt);
+
+  for (let i = 0; i < input.length; i += 1) {
+    const sample = input[i];
+    const filtered = alpha * (previousOutput + sample - previousInput);
+    highPassed[i] = filtered;
+    energy += filtered * filtered;
+    previousInput = sample;
+    previousOutput = filtered;
+  }
+
+  const rms = highPassed.length > 0 ? Math.sqrt(energy / highPassed.length) : 0;
+  const targetRms = 0.07;
+  const gain = rms > 1e-6 ? Math.min(4, targetRms / rms) : 1;
+  if (gain !== 1) {
+    for (let i = 0; i < highPassed.length; i += 1) {
+      highPassed[i] = Math.max(-1, Math.min(1, highPassed[i] * gain));
+    }
+  }
+
+  return wavBytesFromPcm16(downsampleTo16BitPcm(highPassed, inputSampleRate, 16000), 16000);
+}
+
 export function wavBytesFromPcm16(pcm: Int16Array, sampleRate: number): Uint8Array {
   const buffer = new ArrayBuffer(44 + pcm.length * 2);
   const view = new DataView(buffer);
