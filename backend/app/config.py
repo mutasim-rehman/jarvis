@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     )
     orchestrator_catalog_ttl_seconds: float = 60.0
     orchestrator_max_steps: int = 8
+    orchestrator_max_replans: int = 2
     google_gemini_key: str = Field(
         default="",
         validation_alias=AliasChoices("GOOGLE_GEMINI_KEY", "Google_Gemini_Key", "google_gemini_key"),

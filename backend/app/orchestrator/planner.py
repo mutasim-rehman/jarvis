@@ -9,6 +9,7 @@ from typing import Any
 from backend.app.config import settings
 from backend.app.orchestrator import catalog_client, gemini_plan, ollama_plan
 from backend.app.orchestrator.prompt import build_orchestrator_system_prompt, build_repair_prompt
+from backend.app.orchestrator.telemetry import log_plan
 from shared.schema import OrchestratorPlan, Task, ToolCatalog
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,40 @@ _ALLOWED_ACTIONS: set[str] | None = None
 
 def _allowed_actions(catalog: ToolCatalog) -> set[str]:
     return {c.tool.name for c in catalog.capabilities if c.available}
+
+
+def _parse_step(item: dict, allowed: set[str]) -> Task | None:
+    action = str(item.get("action", "")).strip().upper()
+    if not action:
+        return None
+    if action == "OPEN_WEBSITE":
+        action = "OPEN_URL"
+    if allowed and action not in allowed:
+        logger.warning("Planner proposed unavailable action %s — skipping", action)
+        return None
+    target = item.get("target")
+    if isinstance(target, str):
+        target = target.strip() or None
+    else:
+        target = None
+    params = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
+    step_id = item.get("id")
+    if isinstance(step_id, str):
+        step_id = step_id.strip() or None
+    else:
+        step_id = None
+    depends_on = item.get("depends_on") if isinstance(item.get("depends_on"), list) else []
+    depends_on = [str(d).strip() for d in depends_on if str(d).strip()]
+    inputs_from = item.get("inputs_from") if isinstance(item.get("inputs_from"), dict) else {}
+    inputs_from = {str(k): str(v) for k, v in inputs_from.items()}
+    return Task(
+        action=action,
+        target=target,
+        parameters=params,
+        id=step_id,
+        depends_on=depends_on,
+        inputs_from=inputs_from,
+    )
 
 
 def _parse_plan_json(raw: str, catalog: ToolCatalog) -> OrchestratorPlan:
@@ -31,36 +66,18 @@ def _parse_plan_json(raw: str, catalog: ToolCatalog) -> OrchestratorPlan:
     for item in steps_raw[: settings.orchestrator_max_steps]:
         if not isinstance(item, dict):
             continue
-        action = str(item.get("action", "")).strip().upper()
-        if not action:
-            continue
-        if action == "OPEN_WEBSITE":
-            action = "OPEN_URL"
-        if allowed and action not in allowed:
-            logger.warning("Planner proposed unavailable action %s — skipping", action)
-            continue
-        target = item.get("target")
-        if isinstance(target, str):
-            target = target.strip() or None
-        else:
-            target = None
-        params = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
-        steps.append(Task(action=action, target=target, parameters=params))
+        step = _parse_step(item, allowed)
+        if step:
+            steps.append(step)
 
     fallback_raw = data.get("fallback_steps") or []
     fallback_steps: list[Task] = []
     if isinstance(fallback_raw, list):
         for item in fallback_raw[: settings.orchestrator_max_steps]:
-            if isinstance(item, dict) and item.get("action"):
-                action = str(item["action"]).strip().upper()
-                if action == "OPEN_WEBSITE":
-                    action = "OPEN_URL"
-                target = item.get("target")
-                if isinstance(target, str):
-                    target = target.strip() or None
-                else:
-                    target = None
-                fallback_steps.append(Task(action=action, target=target))
+            if isinstance(item, dict):
+                step = _parse_step(item, allowed)
+                if step:
+                    fallback_steps.append(step)
 
     return OrchestratorPlan(
         goal=str(data.get("goal") or "").strip() or "user request",
@@ -109,6 +126,12 @@ async def plan(user_text: str, *, catalog: ToolCatalog | None = None) -> tuple[O
             plan_obj = _parse_plan_json(raw, cat)
             meta["orchestrator_provider"] = provider_meta.get("provider", settings.orchestrator_provider)
             meta["plan_steps"] = len(plan_obj.steps)
+            meta["goal"] = plan_obj.goal
+            log_plan(
+                goal=plan_obj.goal,
+                steps=[s.model_dump(exclude_none=True) for s in plan_obj.steps],
+                meta=meta,
+            )
             return plan_obj, meta
         except (json.JSONDecodeError, ValueError) as exc:
             last_error = str(exc)

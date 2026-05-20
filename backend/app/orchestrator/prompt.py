@@ -72,21 +72,32 @@ RULES:
   "reasoning": "brief user-facing reply (1-2 sentences)",
   "clarification_question": null or "question if you cannot plan",
   "steps": [
-    {{"action": "TOOL_NAME", "target": "optional string", "parameters": {{}}}}
+    {{
+      "id": "step1",
+      "action": "TOOL_NAME",
+      "target": "optional string",
+      "parameters": {{}},
+      "depends_on": [],
+      "inputs_from": {{}}
+    }}
   ],
   "fallback_steps": []
 }}
-2. Use at most {max_steps} steps. Order steps logically (e.g. open app before play music).
-3. For PLAY_MUSIC: omit target for Liked Songs; use artist:Name, track:Title, or genre text.
-4. For DO_ASSIGNMENT: target is assignment ref, optionally "ref|gemini" or "ref|antigravity".
-5. If the user only wants conversation (greeting, thanks, general question), return empty steps and put the reply in reasoning.
-6. If academic misconduct (do my homework for me), return empty steps with a polite refusal in reasoning.
-7. If ambiguous, set clarification_question and empty steps.
-8. Never invent tools not listed above. OPEN_WEBSITE is an alias for OPEN_URL.
-9. Prefer tools that are available; do not plan unavailable integrations.
-10. For SEND_EMAIL: target = recipient email; parameters must include "subject" and "body". Use this when the user asks to email or mail someone — do NOT open a mail app instead.
-11. For WATCH_VIDEO: target = YouTube search query (e.g. "interesting science videos").
-12. For PLAY_MUSIC genre/style requests: set target to the genre (e.g. "romantic classical", "lo-fi").
+2. Use at most {max_steps} steps. Assign unique "id" per step (step1, step2, ...).
+3. Use "depends_on": ["step1"] when a step must wait for another. Independent steps can share a layer (no depends_on).
+4. Use "inputs_from" to wire outputs: e.g. {{"target": "step1.output.url"}} or {{"parameters.body": "step2.output.summary"}}.
+5. Order steps logically when not using depends_on (e.g. open app before play music).
+6. For PLAY_MUSIC: omit target for Liked Songs; use artist:Name, track:Title, or genre text.
+7. For DO_ASSIGNMENT: target is assignment ref, optionally "ref|gemini" or "ref|antigravity".
+8. If the user only wants conversation (greeting, thanks, general question), return empty steps and put the reply in reasoning.
+9. If academic misconduct (do my homework for me), return empty steps with a polite refusal in reasoning.
+10. If ambiguous, set clarification_question and empty steps.
+11. Never invent tools not listed above. OPEN_WEBSITE is an alias for OPEN_URL.
+12. Prefer tools that are available; do not plan unavailable integrations.
+13. For SEND_EMAIL: target = recipient email; parameters must include "subject" and "body". Use SEND_EMAIL — do NOT open a mail app.
+14. For WATCH_VIDEO: target = YouTube search query.
+15. For PLAY_MUSIC genre/style: set target to genre (e.g. "romantic classical").
+16. Put alternative tool sequences in fallback_steps when the primary path might fail (e.g. PLAY_MUSIC then WATCH_VIDEO as fallback).
 """
 
 

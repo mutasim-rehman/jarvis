@@ -13,10 +13,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from shared.schema import InteractResponse, ParseRequest, ParseResponse, RouteKind, SCHEMA_VERSION
+from shared.schema import (
+    ActionCommand,
+    InteractResponse,
+    ParseRequest,
+    ParseResponse,
+    RouteKind,
+    RunCommandResponse,
+    SCHEMA_VERSION,
+)
 from .config import settings
 from .parser import parse_intent
 from .executor_client import executor_client
+from .orchestrator.replan import replan
+from .orchestrator.telemetry import log_execution
 from .stt import transcribe_wav_bytes, warmup_model
 from .tts import iter_tts_wav_chunks, synthesize_tts_wav, warmup_tts
 from .voiceprint import (
@@ -132,54 +142,114 @@ async def parse_text(
     return ParseResponse(command=command, original_text=request.text)
 
 
+def _inline_wait_for_command(command: ActionCommand) -> float:
+    inline_wait = max(0.1, settings.executor_inline_wait_seconds)
+    task_actions = {t.action for t in (command.tasks or []) if getattr(t, "action", None)}
+    if "SEND_EMAIL" in task_actions:
+        inline_wait = max(inline_wait, 25.0)
+    if len(command.tasks or []) > 2:
+        inline_wait = max(inline_wait, 15.0)
+    return inline_wait
+
+
+async def _run_executor_inline(
+    command: ActionCommand,
+) -> tuple[RunCommandResponse | None, str, float]:
+    """Returns (result, execution_mode, execute_ms)."""
+    execute_started = time.perf_counter()
+    inline_wait = _inline_wait_for_command(command)
+    run_task = asyncio.create_task(executor_client.run_command(command))
+    try:
+        result = await asyncio.wait_for(asyncio.shield(run_task), timeout=inline_wait)
+        execute_ms = (time.perf_counter() - execute_started) * 1000
+        return result, "inline", execute_ms
+    except asyncio.TimeoutError:
+        run_task.add_done_callback(_log_executor_task_result)
+        execute_ms = (time.perf_counter() - execute_started) * 1000
+        logger.info("interact execution deferred inline_wait_s=%.2f", inline_wait)
+        return None, "deferred", execute_ms
+
+
+def _apply_execution_to_response(assistant_resp, execution_result: RunCommandResponse | None) -> None:
+    if execution_result is None:
+        return
+    if not execution_result.overall_success:
+        failed_msgs = [
+            r.message for r in execution_result.results if not r.success and (r.message or "").strip()
+        ]
+        if failed_msgs:
+            assistant_resp.message = failed_msgs[0]
+            failed = next((r for r in execution_result.results if not r.success), None)
+            if failed:
+                assistant_resp.meta["execution_error"] = failed.error_code
+    else:
+        ok_msgs = [r.message for r in execution_result.results if r.success and (r.message or "").strip()]
+        if ok_msgs and ok_msgs[0] not in assistant_resp.message:
+            assistant_resp.message = ok_msgs[0]
+
+
 @app.post("/api/interact", response_model=InteractResponse)
 async def interact(
     request: ParseRequest,
     _: None = Depends(verify_dev_api_key),
 ):
     """
-    Phase 3: Parse natural language and execute the command if applicable.
-    Returns both the assistant's message and the execution results.
+    Parse natural language, execute via orchestrator plan, replan on failure (Phase 2).
     """
     request_started = time.perf_counter()
-    # 1. Parse intent
     parse_started = time.perf_counter()
     if request.chat_provider:
         assistant_resp = await parse_intent(request.text, chat_provider=request.chat_provider)
     else:
         assistant_resp = await parse_intent(request.text)
     parse_ms = (time.perf_counter() - parse_started) * 1000
-    
-    execution_result = None
-    
-    # 2. Execute if a command exists and routing allows it
+
+    execution_result: RunCommandResponse | None = None
     execute_ms = 0.0
     execution_mode = "none"
-    if assistant_resp.command and assistant_resp.route == RouteKind.DESKTOP_EXECUTION:
-        execute_started = time.perf_counter()
-        inline_wait = max(0.1, settings.executor_inline_wait_seconds)
-        task_actions = {
-            t.action for t in (assistant_resp.command.tasks or []) if getattr(t, "action", None)
-        }
-        if "SEND_EMAIL" in task_actions:
-            inline_wait = max(inline_wait, 25.0)
-        run_task = asyncio.create_task(executor_client.run_command(assistant_resp.command))
-        try:
-            execution_result = await asyncio.wait_for(
-                asyncio.shield(run_task),
-                timeout=inline_wait,
+    replan_count = 0
+    goal = assistant_resp.meta.get("goal") or request.text
+
+    while (
+        assistant_resp.command
+        and assistant_resp.route == RouteKind.DESKTOP_EXECUTION
+        and replan_count <= settings.orchestrator_max_replans
+    ):
+        execution_result, execution_mode, execute_ms = await _run_executor_inline(assistant_resp.command)
+        if execution_result is not None:
+            log_execution(
+                goal=goal,
+                overall_success=execution_result.overall_success,
+                results=[r.model_dump(exclude_none=True) for r in execution_result.results],
+                replan_attempt=replan_count,
             )
-            execute_ms = (time.perf_counter() - execute_started) * 1000
-            execution_mode = "inline"
-        except asyncio.TimeoutError:
-            run_task.add_done_callback(_log_executor_task_result)
-            execute_ms = (time.perf_counter() - execute_started) * 1000
+        if execution_result is None:
             assistant_resp.meta["execution_pending"] = True
-            execution_mode = "deferred"
-            logger.info(
-                "interact execution deferred inline_wait_s=%.2f",
-                settings.executor_inline_wait_seconds,
-            )
+            break
+        if execution_result.overall_success:
+            break
+        if replan_count >= settings.orchestrator_max_replans:
+            assistant_resp.meta["replan_exhausted"] = True
+            _apply_execution_to_response(assistant_resp, execution_result)
+            break
+
+        replan_count += 1
+        plan_obj, replan_meta = await replan(
+            original_request=request.text,
+            goal=goal,
+            prior_results=execution_result.results,
+            replan_attempt=replan_count,
+        )
+        assistant_resp.meta.update(replan_meta)
+        assistant_resp.meta["replan_count"] = replan_count
+        if not plan_obj.steps:
+            assistant_resp.message = plan_obj.reasoning or assistant_resp.message
+            break
+        assistant_resp.command = ActionCommand(intent="ORCHESTRATED", target=None, tasks=plan_obj.steps)
+        if plan_obj.reasoning:
+            assistant_resp.message = plan_obj.reasoning
+        goal = plan_obj.goal or goal
+
     total_ms = (time.perf_counter() - request_started) * 1000
     assistant_resp.meta["timing_ms"] = {
         "parse_ms": round(parse_ms, 2),
@@ -187,27 +257,20 @@ async def interact(
         "total_ms": round(total_ms, 2),
     }
     assistant_resp.meta["execution_mode"] = execution_mode
-    if execution_result is not None and not execution_result.overall_success:
-        failed_msgs = [
-            r.message for r in execution_result.results if not r.success and (r.message or "").strip()
-        ]
-        if failed_msgs:
-            assistant_resp.message = failed_msgs[0]
-            assistant_resp.meta["execution_error"] = execution_result.results[0].error_code
-    elif execution_result is not None and execution_result.overall_success:
-        ok_msgs = [r.message for r in execution_result.results if r.success and (r.message or "").strip()]
-        if ok_msgs and ok_msgs[0] not in assistant_resp.message:
-            assistant_resp.message = ok_msgs[0]
+    if replan_count:
+        assistant_resp.meta["replan_count"] = replan_count
+    _apply_execution_to_response(assistant_resp, execution_result)
+
     logger.info(
-        "interact timing parse_ms=%.1f execute_ms=%.1f total_ms=%.1f mode=%s route=%s has_command=%s",
+        "interact timing parse_ms=%.1f execute_ms=%.1f total_ms=%.1f mode=%s replans=%d route=%s",
         parse_ms,
         execute_ms,
         total_ms,
         execution_mode,
+        replan_count,
         assistant_resp.route,
-        bool(assistant_resp.command),
     )
-        
+
     return InteractResponse(
         assistant_response=assistant_resp,
         execution_result=execution_result,

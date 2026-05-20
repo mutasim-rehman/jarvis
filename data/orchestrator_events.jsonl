@@ -1,0 +1,8 @@
+{"event": "replan", "goal": "music fallback", "step_count": 1, "steps": [{"id": "step1", "action": "WATCH_VIDEO", "target": "lo-fi music", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "gemini", "model": null, "ts": 1779310132764}
+{"event": "plan", "goal": "play music", "step_count": 1, "steps": [{"action": "PLAY_MUSIC", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "gemini", "model": null, "ts": 1779310132791}
+{"event": "plan", "goal": "open app", "step_count": 1, "steps": [{"action": "OPEN_APP", "target": "chrome", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "ollama", "model": null, "ts": 1779310132797}
+{"event": "plan", "goal": "music", "step_count": 1, "steps": [{"action": "PLAY_MUSIC", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "gemini", "model": null, "ts": 1779310132801}
+{"event": "plan", "goal": "play music", "step_count": 1, "steps": [{"action": "PLAY_MUSIC", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "gemini", "model": null, "ts": 1779310161266}
+{"event": "plan", "goal": "open app", "step_count": 1, "steps": [{"action": "OPEN_APP", "target": "chrome", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "ollama", "model": null, "ts": 1779310161272}
+{"event": "plan", "goal": "music", "step_count": 1, "steps": [{"action": "PLAY_MUSIC", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "gemini", "model": null, "ts": 1779310161277}
+{"event": "replan", "goal": "music fallback", "step_count": 1, "steps": [{"id": "step1", "action": "WATCH_VIDEO", "target": "lo-fi music", "parameters": {}, "depends_on": [], "inputs_from": {}}], "provider": "gemini", "model": null, "ts": 1779310161476}

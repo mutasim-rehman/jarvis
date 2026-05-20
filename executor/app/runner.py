@@ -12,6 +12,7 @@ from executor.app.handlers.music import handle_play_music
 from executor.app.handlers.routine import handle_morning_ritual
 from executor.app.handlers.video import handle_watch_video
 from executor.app.handlers.mail import handle_send_email
+from executor.app.dag import run_tasks_dag, uses_dag_execution
 from executor.app.handlers.web import handle_get_assignments, handle_get_highlights, handle_open_url
 
 _HANDLERS = {
@@ -76,6 +77,9 @@ def build_context(allowlist_file: Path | None) -> HandlerContext:
 
 def run_command(cmd: ActionCommand, ctx: HandlerContext) -> RunCommandResponse:
     tasks = normalize_tasks(cmd)
+    if uses_dag_execution(tasks):
+        return run_tasks_dag(tasks, ctx, _HANDLERS)
+
     results: list[TaskResult] = []
     for task in tasks:
         handler = _HANDLERS.get(task.action)
@@ -89,7 +93,12 @@ def run_command(cmd: ActionCommand, ctx: HandlerContext) -> RunCommandResponse:
                 )
             )
         else:
-            results.append(handler(task, ctx))
+            result = handler(task, ctx)
+            if result.success and not result.output:
+                out = dict(result.artifacts) if result.artifacts else {}
+                if out:
+                    result = result.model_copy(update={"output": out})
+            results.append(result)
     overall = all(r.success for r in results)
     return RunCommandResponse(overall_success=overall, results=results)
 

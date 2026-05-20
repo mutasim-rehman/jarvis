@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from .workflows import IntentType  # re-export for clients/tests
 
 # Bump when breaking API or command shape changes (executor / controllers depend on this).
-SCHEMA_VERSION = "2.0.0"
+SCHEMA_VERSION = "2.1.0"
 
 
 class RouteKind(str, Enum):
@@ -17,11 +17,23 @@ class RouteKind(str, Enum):
 
 class Task(BaseModel):
     model_config = ConfigDict(extra="allow")
+    id: Optional[str] = Field(
+        default=None,
+        description="Stable step id for DAG deps and output references (e.g. step1).",
+    )
     action: str = Field(description="The specific action to perform (e.g., OPEN_APP, CREATE_FOLDER).")
     target: Optional[str] = Field(default=None, description="The target of the action if applicable.")
     parameters: Dict[str, Any] = Field(
         default_factory=dict,
         description="Extra inputs (e.g. SEND_EMAIL subject/body).",
+    )
+    depends_on: List[str] = Field(
+        default_factory=list,
+        description="Step ids that must succeed before this step runs.",
+    )
+    inputs_from: Dict[str, str] = Field(
+        default_factory=dict,
+        description='Map task fields to prior outputs, e.g. {"target": "step1.output.url"}.',
     )
 
 
@@ -77,9 +89,14 @@ class TaskResult(BaseModel):
 
     action: str
     success: bool
+    task_id: Optional[str] = Field(default=None, description="Matches Task.id when DAG execution is used.")
     error_code: Optional[str] = Field(default=None, description="Stable machine-readable error, e.g. NOT_IMPLEMENTED.")
     message: str = ""
     artifacts: Dict[str, Any] = Field(default_factory=dict)
+    output: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Structured outputs for downstream steps (inputs_from resolution).",
+    )
 
 
 class RunCommandRequest(BaseModel):
