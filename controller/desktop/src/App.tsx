@@ -136,6 +136,8 @@ export default function App() {
   const localMicInitializingRef = useRef(false);
   const localTranscribeBusyRef = useRef(false);
   const pendingLocalSegmentsRef = useRef<PendingSegment[]>([]);
+  const deferredWhileSpeakingRef = useRef<PendingSegment[]>([]);
+  const flushDeferredSegmentsRef = useRef<() => void>(() => {});
   const voiceWorkerActiveRef = useRef(false);
   const wakeHintShownAtRef = useRef(0);
   const lastTranscriptRef = useRef("");
@@ -477,6 +479,7 @@ export default function App() {
     }
     ttsScheduledSourcesRef.current = [];
     ttsSourceRef.current = null;
+    deferredWhileSpeakingRef.current = [];
     micSuppressUntilRef.current = Date.now() + 120;
     assistantSpeakingRef.current = false;
     setAssistantSpeaking(false);
@@ -486,6 +489,7 @@ export default function App() {
     async (text: string) => {
       const cleanText = text.trim();
       if (!cleanText) return;
+      deferredWhileSpeakingRef.current = [];
       const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
       const fallbackMs = Math.min(18000, Math.max(1200, wordCount * 340 + 900));
       stopCurrentTts();
@@ -547,6 +551,7 @@ export default function App() {
           if (ttsSourceRef.current === source) {
             ttsSourceRef.current = null;
           }
+          flushDeferredSegmentsRef.current();
         };
         await ctx.resume();
         if (ttsGenerationRef.current !== generation) return;
@@ -584,9 +589,11 @@ export default function App() {
 
         const finishIfComplete = () => {
           if (!streamDone || endedCount < scheduledCount || ttsGenerationRef.current !== generation) return;
+          assistantSpeakingRef.current = false;
           setAssistantSpeaking(false);
           suppressMicFor(850);
           ttsSourceRef.current = null;
+          flushDeferredSegmentsRef.current();
         };
 
         const scheduleChunk = async (audioBase64: string) => {
@@ -896,6 +903,23 @@ export default function App() {
     }
   }, [addMessage, backendBaseUrl, isMicSuppressed, logPerf, sendText, speakModeOn, voiceLockEnabled, voiceprintEnabled, voiceprintStatus?.enabled]);
 
+  const flushDeferredSegments = useCallback(() => {
+    const deferred = deferredWhileSpeakingRef.current.splice(0);
+    if (deferred.length === 0) return;
+    const waitMs = Math.max(0, micSuppressUntilRef.current - Date.now()) + 150;
+    window.setTimeout(() => {
+      if (!micOnRef.current) return;
+      for (const segment of deferred) {
+        pendingLocalSegmentsRef.current.push(segment);
+      }
+      void processVoiceQueue();
+    }, waitMs);
+  }, [processVoiceQueue]);
+
+  useEffect(() => {
+    flushDeferredSegmentsRef.current = flushDeferredSegments;
+  }, [flushDeferredSegments]);
+
   const enqueueLocalSegment = useCallback((audio: Float32Array, inputSampleRate: number) => {
     if (!micOnRef.current || isMicSuppressed()) return;
     if (voiceprintEnrollStateRef.current.active) {
@@ -951,12 +975,10 @@ export default function App() {
           energy += chunk[i] * chunk[i];
         }
         const rms = Math.sqrt(energy / chunk.length);
+        const assistantSpeakingNow = assistantSpeakingRef.current;
 
-        if (assistantSpeakingRef.current && rms >= MIC_TRIGGER_RMS) {
-          stopCurrentTts();
-        }
-
-        if (isMicSuppressed()) {
+        // While Jarvis is speaking, keep capturing user audio but do not stop playback.
+        if (isMicSuppressed() && !assistantSpeakingNow) {
           setVoiceDetected(false);
           state.chunks = [];
           state.sampleCount = 0;
@@ -1018,7 +1040,17 @@ export default function App() {
           state.silenceSampleCount = 0;
           state.cooldownUntilMs = nowMs + MIC_SEND_COOLDOWN_MS;
           if (speechSeconds >= MIC_SEGMENT_MIN_SECONDS) {
-            enqueueLocalSegment(merged, state.context.sampleRate);
+            if (assistantSpeakingRef.current) {
+              deferredWhileSpeakingRef.current.push({
+                audio: merged,
+                inputSampleRate: state.context.sampleRate,
+              });
+              if (speakModeOn) {
+                setLastHeardText("Queued — I'll handle that after I finish speaking.");
+              }
+            } else {
+              enqueueLocalSegment(merged, state.context.sampleRate);
+            }
           }
         }
       };
@@ -1038,7 +1070,7 @@ export default function App() {
       addMessage("system", `Mic access error: ${message}`);
       setMicOn(false);
     }
-  }, [addMessage, enqueueLocalSegment, isMicSuppressed, stopCurrentTts]);
+  }, [addMessage, enqueueLocalSegment, isMicSuppressed, speakModeOn]);
 
   const startMicRecognition = useCallback(() => {
     if (recognitionRef.current) return;
