@@ -19,6 +19,10 @@ class Task(BaseModel):
     model_config = ConfigDict(extra="allow")
     action: str = Field(description="The specific action to perform (e.g., OPEN_APP, CREATE_FOLDER).")
     target: Optional[str] = Field(default=None, description="The target of the action if applicable.")
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Extra inputs (e.g. SEND_EMAIL subject/body).",
+    )
 
 
 class ActionCommand(BaseModel):

@@ -157,11 +157,17 @@ async def interact(
     execution_mode = "none"
     if assistant_resp.command and assistant_resp.route == RouteKind.DESKTOP_EXECUTION:
         execute_started = time.perf_counter()
+        inline_wait = max(0.1, settings.executor_inline_wait_seconds)
+        task_actions = {
+            t.action for t in (assistant_resp.command.tasks or []) if getattr(t, "action", None)
+        }
+        if "SEND_EMAIL" in task_actions:
+            inline_wait = max(inline_wait, 25.0)
         run_task = asyncio.create_task(executor_client.run_command(assistant_resp.command))
         try:
             execution_result = await asyncio.wait_for(
                 asyncio.shield(run_task),
-                timeout=max(0.1, settings.executor_inline_wait_seconds),
+                timeout=inline_wait,
             )
             execute_ms = (time.perf_counter() - execute_started) * 1000
             execution_mode = "inline"
@@ -181,6 +187,17 @@ async def interact(
         "total_ms": round(total_ms, 2),
     }
     assistant_resp.meta["execution_mode"] = execution_mode
+    if execution_result is not None and not execution_result.overall_success:
+        failed_msgs = [
+            r.message for r in execution_result.results if not r.success and (r.message or "").strip()
+        ]
+        if failed_msgs:
+            assistant_resp.message = failed_msgs[0]
+            assistant_resp.meta["execution_error"] = execution_result.results[0].error_code
+    elif execution_result is not None and execution_result.overall_success:
+        ok_msgs = [r.message for r in execution_result.results if r.success and (r.message or "").strip()]
+        if ok_msgs and ok_msgs[0] not in assistant_resp.message:
+            assistant_resp.message = ok_msgs[0]
     logger.info(
         "interact timing parse_ms=%.1f execute_ms=%.1f total_ms=%.1f mode=%s route=%s has_command=%s",
         parse_ms,

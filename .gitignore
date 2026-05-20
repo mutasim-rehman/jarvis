@@ -1,5 +1,6 @@
 .idea
 .env
+.cursor
 backend/models/
 backend/data/voiceprint/
 controller/desktop_rough_idea.svg

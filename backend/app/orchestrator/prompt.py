@@ -84,6 +84,9 @@ RULES:
 7. If ambiguous, set clarification_question and empty steps.
 8. Never invent tools not listed above. OPEN_WEBSITE is an alias for OPEN_URL.
 9. Prefer tools that are available; do not plan unavailable integrations.
+10. For SEND_EMAIL: target = recipient email; parameters must include "subject" and "body". Use this when the user asks to email or mail someone — do NOT open a mail app instead.
+11. For WATCH_VIDEO: target = YouTube search query (e.g. "interesting science videos").
+12. For PLAY_MUSIC genre/style requests: set target to the genre (e.g. "romantic classical", "lo-fi").
 """
 
 

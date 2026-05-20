@@ -34,18 +34,27 @@ export function extractAssistantText(data: unknown): string {
 
   const executionResult = record.execution_result;
   if (executionResult && typeof executionResult === "object") {
-    const results = (executionResult as Record<string, unknown>).results;
+    const exec = executionResult as Record<string, unknown>;
+    const results = exec.results;
     if (Array.isArray(results)) {
-      const bestTask = [...results]
+      const rows = results.filter((item) => item && typeof item === "object") as Array<
+        Record<string, unknown>
+      >;
+      const failed = rows.find((row) => row.success === false);
+      if (failed) {
+        const message = failed.message;
+        if (typeof message === "string" && message.trim()) {
+          return message;
+        }
+      }
+      const bestTask = [...rows]
         .reverse()
-        .find((item) => {
-          if (!item || typeof item !== "object") return false;
-          const row = item as Record<string, unknown>;
+        .find((row) => {
           const message = row.message;
           return typeof message === "string" && message.trim().length > 0;
         });
-      if (bestTask && typeof bestTask === "object") {
-        const message = (bestTask as Record<string, unknown>).message;
+      if (bestTask) {
+        const message = bestTask.message;
         if (typeof message === "string" && message.trim()) {
           return message;
         }

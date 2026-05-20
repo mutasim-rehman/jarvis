@@ -143,4 +143,33 @@ TOOLS: list[ToolDefinition] = [
         parameters=[],
         requires=["spotify_auth"],
     ),
+    ToolDefinition(
+        name="SEND_EMAIL",
+        category="email",
+        description=(
+            "Send an email via configured SMTP (Gmail etc.). "
+            "Set target to recipient address; put subject and body in parameters."
+        ),
+        parameters=[
+            ToolParameter(
+                name="target",
+                type="string",
+                description="Recipient email address.",
+                required=True,
+            ),
+            ToolParameter(
+                name="subject",
+                type="string",
+                description="Email subject line.",
+                required=True,
+            ),
+            ToolParameter(
+                name="body",
+                type="string",
+                description="Plain-text email body.",
+                required=True,
+            ),
+        ],
+        requires=["smtp"],
+    ),
 ]

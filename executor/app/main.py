@@ -5,6 +5,8 @@ _root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
+import asyncio
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 
 from shared.schema import RunCommandRequest, RunCommandResponse, SCHEMA_VERSION, ToolCatalog
@@ -53,4 +55,9 @@ async def run_tasks(
     request: RunCommandRequest,
     _: None = Depends(verify_dev_api_key),
 ):
-    return run_command_with_allowlist_path(request.command, settings.allowlist_path or None)
+    # Run sync handlers (SMTP, Spotify, etc.) off the event loop so /health stays responsive.
+    return await asyncio.to_thread(
+        run_command_with_allowlist_path,
+        request.command,
+        settings.allowlist_path or None,
+    )

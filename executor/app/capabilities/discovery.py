@@ -56,6 +56,10 @@ def _scan_env_tags() -> set[str]:
         tags.add("youtube_api")
     if (executor_settings.ollama_base_url or "").strip():
         tags.add("ollama_configured")
+    if _env_present("SMTP_USER", "EXECUTOR_SMTP_USER") and _env_present(
+        "SMTP_PASS", "SMTP_PASSWORD", "EXECUTOR_SMTP_PASS"
+    ):
+        tags.add("smtp_credentials")
     return tags
 
 
@@ -93,6 +97,8 @@ def _collect_service_tags(base_tags: set[str]) -> set[str]:
     if "google_credentials" in tags or "google_auth" in tags:
         if _token_file_present("google_classroom"):
             tags.add("google_auth")
+    if "smtp_credentials" in tags:
+        tags.add("smtp")
     return tags
 
 

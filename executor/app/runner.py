@@ -11,6 +11,7 @@ from executor.app.handlers.fs import handle_create_folder
 from executor.app.handlers.music import handle_play_music
 from executor.app.handlers.routine import handle_morning_ritual
 from executor.app.handlers.video import handle_watch_video
+from executor.app.handlers.mail import handle_send_email
 from executor.app.handlers.web import handle_get_assignments, handle_get_highlights, handle_open_url
 
 _HANDLERS = {
@@ -24,6 +25,7 @@ _HANDLERS = {
     "PLAY_MUSIC": handle_play_music,
     "WATCH_VIDEO": handle_watch_video,
     "MORNING_RITUAL": handle_morning_ritual,
+    "SEND_EMAIL": handle_send_email,
 }
 _allowlist_cache: dict[str, tuple[float, tuple[list[Path], dict[str, str], dict[str, str]]]] = {}
 
