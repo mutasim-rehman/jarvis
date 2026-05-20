@@ -18,12 +18,13 @@ def _model_url() -> str:
 
 def _request_target(api_key: str) -> tuple[str, dict[str, str]]:
     """
-    Google AI Studio keys (AIza…) use ?key= query param.
-    OAuth-style tokens (AQ.…, ya29.…) use Authorization: Bearer.
+    Google Generative Language API:
+    - API keys (AIza…, AQ.…) → ?key= query parameter
+    - OAuth access tokens (ya29.…) → Authorization: Bearer
     """
-    if api_key.startswith("AIza"):
-        return f"{_model_url()}?key={api_key}", {}
-    return _model_url(), {"Authorization": f"Bearer {api_key}"}
+    if api_key.startswith("ya29."):
+        return _model_url(), {"Authorization": f"Bearer {api_key}"}
+    return f"{_model_url()}?key={api_key}", {}
 
 
 def _build_payload(system: str, user: str) -> dict[str, Any]:
