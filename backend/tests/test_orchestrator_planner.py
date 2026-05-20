@@ -24,6 +24,17 @@ def _sample_catalog() -> ToolCatalog:
     )
 
 
+def test_resolved_orchestrator_env(monkeypatch):
+    from backend.app.config import Settings
+
+    monkeypatch.setenv("ORCHESTRATOR_GEMINI", "AQ.test-key")
+    monkeypatch.setenv("ORCHESTRATOR_GEMINI_MODEL", "gemini-3-flash-preview")
+    monkeypatch.delenv("GOOGLE_GEMINI_KEY", raising=False)
+    s = Settings()
+    assert s.resolved_orchestrator_gemini_key() == "AQ.test-key"
+    assert s.resolved_orchestrator_model() == "gemini-3-flash-preview"
+
+
 def test_parse_plan_json_valid():
     raw = json.dumps(
         {

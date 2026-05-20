@@ -61,6 +61,13 @@ def quick_conversational_response(user_text: str) -> str | None:
     if capability_patterns.search(normalized):
         return _CAPABILITY_RESPONSE
 
+    online_patterns = re.compile(
+        r"\b(are you online|you online|status check|systems online|come online"
+        r"|back online|are you there|are you awake|are you working)\b"
+    )
+    if online_patterns.search(normalized):
+        return "Yes, Sir. I am online and ready to assist."
+
     if normalized in {
         "thank you",
         "thanks",

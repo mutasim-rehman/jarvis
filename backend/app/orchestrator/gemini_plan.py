@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import time
 from typing import Any
@@ -13,8 +12,18 @@ from backend.app.config import settings as app_settings
 
 
 def _model_url() -> str:
-    model = (app_settings.orchestrator_model or "gemini-2.0-flash-lite").strip()
+    model = app_settings.resolved_orchestrator_model()
     return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+def _request_target(api_key: str) -> tuple[str, dict[str, str]]:
+    """
+    Google AI Studio keys (AIza…) use ?key= query param.
+    OAuth-style tokens (AQ.…, ya29.…) use Authorization: Bearer.
+    """
+    if api_key.startswith("AIza"):
+        return f"{_model_url()}?key={api_key}", {}
+    return _model_url(), {"Authorization": f"Bearer {api_key}"}
 
 
 def _build_payload(system: str, user: str) -> dict[str, Any]:
@@ -38,17 +47,22 @@ def _extract_json_text(raw: str) -> str:
 
 
 async def generate_plan_json(system_prompt: str, user_text: str) -> tuple[str, dict[str, Any]]:
-    api_key = (app_settings.google_gemini_key or "").strip()
+    api_key = app_settings.resolved_orchestrator_gemini_key()
     if not api_key:
-        raise RuntimeError("GOOGLE_GEMINI_KEY not configured for orchestrator.")
+        raise RuntimeError(
+            "Orchestrator Gemini key not configured. Set ORCHESTRATOR_GEMINI or GOOGLE_GEMINI_KEY in .env."
+        )
 
     payload = _build_payload(system_prompt, user_text)
-    url = f"{_model_url()}?key={api_key}"
+    url, headers = _request_target(api_key)
+    model = app_settings.resolved_orchestrator_model()
     started = time.perf_counter()
     async with httpx.AsyncClient(timeout=45.0) as client:
-        response = await client.post(url, json=payload)
+        response = await client.post(url, json=payload, headers=headers)
         if response.status_code != 200:
-            raise RuntimeError(f"Gemini API error {response.status_code}: {response.text[:400]}")
+            raise RuntimeError(
+                f"Gemini API error {response.status_code} (model={model}): {response.text[:400]}"
+            )
         data = response.json()
 
     try:
@@ -58,7 +72,7 @@ async def generate_plan_json(system_prompt: str, user_text: str) -> tuple[str, d
 
     meta = {
         "provider": "gemini",
-        "model": app_settings.orchestrator_model,
+        "model": model,
         "timing_ms": round((time.perf_counter() - started) * 1000, 2),
     }
     return _extract_json_text(text), meta

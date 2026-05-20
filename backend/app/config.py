@@ -1,4 +1,6 @@
-from pydantic import Field
+import os
+
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,9 +36,38 @@ class Settings(BaseSettings):
     orchestrator_disabled: bool = False
     orchestrator_provider: str = "gemini"
     orchestrator_model: str = "gemini-2.0-flash-lite"
+    orchestrator_gemini: str = Field(
+        default="",
+        validation_alias=AliasChoices("ORCHESTRATOR_GEMINI", "orchestrator_gemini"),
+    )
+    orchestrator_gemini_model: str = Field(
+        default="",
+        validation_alias=AliasChoices("ORCHESTRATOR_GEMINI_MODEL", "orchestrator_gemini_model"),
+    )
     orchestrator_catalog_ttl_seconds: float = 60.0
     orchestrator_max_steps: int = 8
-    google_gemini_key: str = Field(default="", validation_alias="GOOGLE_GEMINI_KEY")
+    google_gemini_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GOOGLE_GEMINI_KEY", "Google_Gemini_Key", "google_gemini_key"),
+    )
+
+    def resolved_orchestrator_gemini_key(self) -> str:
+        """Prefer ORCHESTRATOR_GEMINI, then GOOGLE_GEMINI_KEY / Google_Gemini_Key."""
+        return (
+            (self.orchestrator_gemini or "").strip()
+            or (os.environ.get("ORCHESTRATOR_GEMINI") or "").strip()
+            or (self.google_gemini_key or "").strip()
+            or (os.environ.get("Google_Gemini_Key") or "").strip()
+        )
+
+    def resolved_orchestrator_model(self) -> str:
+        """Prefer ORCHESTRATOR_GEMINI_MODEL, then ORCHESTRATOR_MODEL."""
+        return (
+            (self.orchestrator_gemini_model or "").strip()
+            or (os.environ.get("ORCHESTRATOR_GEMINI_MODEL") or "").strip()
+            or (self.orchestrator_model or "").strip()
+            or "gemini-2.0-flash-lite"
+        )
 
     # Speech-to-text (faster-whisper only)
     stt_provider: str = "faster_whisper"
@@ -73,7 +104,12 @@ class Settings(BaseSettings):
     tts_piper_noise_scale: float = 0.667
     tts_piper_noise_w: float = 0.8
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
 
 settings = Settings()

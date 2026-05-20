@@ -46,7 +46,11 @@ def _scan_env_tags() -> set[str]:
         tags.add("google_credentials")
     if _token_file_present("google_classroom"):
         tags.add("google_auth")
-    if _env_present("Google_Gemini_Key", "GOOGLE_GEMINI_KEY"):
+    if _env_present(
+        "Google_Gemini_Key",
+        "GOOGLE_GEMINI_KEY",
+        "ORCHESTRATOR_GEMINI",
+    ):
         tags.add("gemini_api")
     if _env_present("Youtube_Data_API_V3", "YOUTUBE_API_KEY") or (executor_settings.youtube_api_key or "").strip():
         tags.add("youtube_api")
