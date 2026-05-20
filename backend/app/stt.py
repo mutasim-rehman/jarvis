@@ -90,6 +90,10 @@ def _wav_bytes_to_float32(audio_bytes: bytes) -> tuple["np.ndarray", int]:
 def _transcribe_with_whisper(audio_bytes: bytes, started: float, model_load_ms: float) -> str:
     decode_started = time.perf_counter()
     audio, frame_rate = _wav_bytes_to_float32(audio_bytes)
+    max_seconds = max(0.5, float(settings.stt_max_audio_seconds))
+    max_samples = int(frame_rate * max_seconds)
+    if audio.size > max_samples:
+        audio = audio[-max_samples:]
     decode_ms = (time.perf_counter() - decode_started) * 1000
     model = _get_whisper_model()
     infer_started = time.perf_counter()

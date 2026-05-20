@@ -25,6 +25,7 @@ from .voiceprint import (
     get_voiceprint_status,
     reset_voiceprint,
     verify_voiceprint,
+    warmup_voiceprint,
 )
 
 app = FastAPI(
@@ -86,6 +87,7 @@ async def on_startup() -> None:
     _tts_ready = True
     asyncio.create_task(_run_warmup_task("stt", warmup_model))
     asyncio.create_task(_run_warmup_task("tts", warmup_tts))
+    asyncio.create_task(_run_warmup_task("voiceprint", warmup_voiceprint))
 
     from backend.chatbot.warmup import warmup_hf_space
 
@@ -318,9 +320,19 @@ async def voiceprint_verify(
     request: Request,
     _: None = Depends(verify_dev_api_key),
 ):
+    started = time.perf_counter()
     try:
         audio_bytes = await request.body()
-        return verify_voiceprint(audio_bytes)
+        result = verify_voiceprint(audio_bytes)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        logger.info(
+            "voiceprint_verify timing total_ms=%.1f bytes=%d matched=%s score=%.4f",
+            elapsed_ms,
+            len(audio_bytes),
+            result.get("matched"),
+            float(result.get("score", 0.0)),
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

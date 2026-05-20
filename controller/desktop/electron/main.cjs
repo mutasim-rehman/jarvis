@@ -550,6 +550,7 @@ async function callVoiceprintFinalize(baseUrl) {
 async function callVoiceprintVerify(wavBytes, baseUrl) {
   const url = `${baseUrl.replace(/\/+$/, "")}/api/voiceprint/verify`;
   const wavBuffer = Buffer.isBuffer(wavBytes) ? wavBytes : Buffer.from(wavBytes);
+  const startedAt = Date.now();
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "audio/wav" },
@@ -560,7 +561,9 @@ async function callVoiceprintVerify(wavBytes, baseUrl) {
     const responseText = await response.text();
     throw new Error(`Voiceprint verify failed ${response.status}: ${responseText || response.statusText}`);
   }
-  return response.json();
+  const data = await response.json();
+  appendLog("backend", `[perf] voiceprint_verify_roundtrip_ms=${Date.now() - startedAt} payload_bytes=${wavBuffer.length}`);
+  return data;
 }
 
 async function listCursorTerminals() {

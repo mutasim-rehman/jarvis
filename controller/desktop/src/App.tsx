@@ -91,7 +91,8 @@ const MIC_TRIGGER_RMS = 0.012;
 const MIC_SUSTAIN_RMS = 0.0075;
 const MIC_SEND_COOLDOWN_MS = 260;
 const MIC_DUPLICATE_WINDOW_MS = 4500;
-const SPEAK_MODE_VOICEPRINT_REQUIRED_PASSES = 2;
+// One pass keeps latency low; two passes need a second mic segment before STT runs.
+const SPEAK_MODE_VOICEPRINT_REQUIRED_PASSES = 1;
 const PREFER_LOCAL_MIC = true;
 export default function App() {
   const [activeView, setActiveView] = useState<AppView>("chat");
@@ -779,16 +780,36 @@ export default function App() {
         const encodeStart = performance.now();
         const wavBytes = wavBytesFromPcm16(pcm, 16000);
         const encodedMs = performance.now() - encodeStart;
-        if (voiceprintStatus?.enabled && voiceprintEnabled) {
-          let verifyResponse: Awaited<ReturnType<typeof window.desktopApi.verifyVoiceprint>>;
-          try {
-            const voiceprintWavBytes = prepareVoiceprintAudio(nextSegment.audio, nextSegment.inputSampleRate);
-            verifyResponse = await window.desktopApi.verifyVoiceprint(voiceprintWavBytes, backendBaseUrl);
-          } catch (vpErr) {
-            addMessage("system", `Voice verification error: ${vpErr instanceof Error ? vpErr.message : String(vpErr)}`);
+        const voiceprintActive = Boolean(voiceprintStatus?.enabled && voiceprintEnabled);
+        const voiceprintWavBytes = voiceprintActive
+          ? prepareVoiceprintAudio(nextSegment.audio, nextSegment.inputSampleRate)
+          : null;
+        const parallelStart = performance.now();
+        let verifyResponse: Awaited<ReturnType<typeof window.desktopApi.verifyVoiceprint>> | null = null;
+        let response: Awaited<ReturnType<typeof window.desktopApi.transcribeAudio>>;
+        try {
+          const transcribePromise = window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
+          if (voiceprintActive && voiceprintWavBytes) {
+            const [verifyResult, transcribeResult] = await Promise.all([
+              window.desktopApi.verifyVoiceprint(voiceprintWavBytes, backendBaseUrl),
+              transcribePromise,
+            ]);
+            verifyResponse = verifyResult;
+            response = transcribeResult;
+          } else {
             voiceprintConsecutivePassesRef.current = 0;
-            continue;
+            response = await transcribePromise;
           }
+        } catch (parallelErr) {
+          addMessage(
+            "system",
+            `Voice processing error: ${parallelErr instanceof Error ? parallelErr.message : String(parallelErr)}`,
+          );
+          voiceprintConsecutivePassesRef.current = 0;
+          continue;
+        }
+        const parallelMs = performance.now() - parallelStart;
+        if (voiceprintActive && verifyResponse) {
           if ("error" in verifyResponse) {
             addMessage("system", `Voice verification error: ${verifyResponse.error}`);
             voiceprintConsecutivePassesRef.current = 0;
@@ -799,6 +820,7 @@ export default function App() {
             logPerf("mic.voiceprint_reject", {
               score: verifyResponse.data.score,
               threshold: verifyResponse.data.threshold,
+              parallelMs: parallelMs.toFixed(1),
               speakModeOn,
             });
             const rejectMessage = `Voice not recognized (score ${verifyResponse.data.score?.toFixed(2)} < threshold ${verifyResponse.data.threshold?.toFixed(2)}). Disable voiceprint in Settings or re-enroll.`;
@@ -818,18 +840,8 @@ export default function App() {
           } else {
             voiceprintConsecutivePassesRef.current = 0;
           }
-        } else {
-          voiceprintConsecutivePassesRef.current = 0;
         }
-        const transcribeStart = performance.now();
-        let response: Awaited<ReturnType<typeof window.desktopApi.transcribeAudio>>;
-        try {
-          response = await window.desktopApi.transcribeAudio(wavBytes, backendBaseUrl);
-        } catch (transcribeEx) {
-          addMessage("system", `Transcription error: ${transcribeEx instanceof Error ? transcribeEx.message : String(transcribeEx)}`);
-          continue;
-        }
-        const transcribeMs = performance.now() - transcribeStart;
+        const transcribeMs = parallelMs;
         if ("error" in response) {
           addMessage("system", `Transcription error: ${response.error}`);
           continue;
@@ -866,7 +878,9 @@ export default function App() {
           pcmSamples: pcm.length,
           wavBytes: wavBytes.length,
           encodedMs: encodedMs.toFixed(1),
+          parallelMs: parallelMs.toFixed(1),
           transcribeMs: transcribeMs.toFixed(1),
+          voiceprintActive,
           queueDepth: pendingLocalSegmentsRef.current.length,
           voiceLockEnabled,
         });

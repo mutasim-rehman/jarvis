@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     stt_whisper_beam_size: int = 1
     stt_whisper_language: str = "en"
     stt_whisper_vad_filter: bool = True
+    stt_max_audio_seconds: float = 3.0
 
     # Voiceprint speaker verification
     voiceprint_verify_threshold: float = 0.0

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import threading
+import time
 import wave
 from itertools import combinations
 from pathlib import Path
@@ -52,6 +54,7 @@ _TARGET_ENROLL_SAMPLES = len(_ENROLLMENT_PHRASES)
 _VERIFY_THRESHOLD = 0.72
 _PROFILE_VERSION = 2
 _BLEND_MAX_WEIGHT = 0.7
+logger = logging.getLogger(__name__)
 
 
 def _ensure_store_dir() -> None:
@@ -357,6 +360,15 @@ def finalize_voiceprint() -> dict:
     if _PENDING_PATH.exists():
         _PENDING_PATH.unlink()
     return get_voiceprint_status()
+
+
+def warmup_voiceprint() -> None:
+    started = time.perf_counter()
+    _get_classifier()
+    logger.info(
+        "voiceprint warmup complete in %.1fms",
+        (time.perf_counter() - started) * 1000,
+    )
 
 
 def verify_voiceprint(audio_bytes: bytes) -> dict:
