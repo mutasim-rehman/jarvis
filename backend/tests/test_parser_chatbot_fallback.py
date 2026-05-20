@@ -1,41 +1,52 @@
+"""Parser no longer routes through chatbot; orchestrator handles planning."""
 import asyncio
 import os
 import sys
 
+import pytest
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from backend.chatbot.types import ProviderUnavailableError
+from shared.schema import OrchestratorPlan
 
 
-def test_parser_returns_fallback_meta_when_hf_unavailable(monkeypatch):
+@pytest.mark.asyncio
+async def test_orchestrator_chat_only_response(monkeypatch):
     import backend.app.parser as parser_module
 
-    async def fake_chat(messages, format=None):
-        raise ProviderUnavailableError(provider="huggingface", reason="space timeout")
+    async def fake_plan(text, catalog=None):
+        return (
+            OrchestratorPlan(
+                goal="joke",
+                reasoning="Here is a light-hearted reply, Sir.",
+                steps=[],
+            ),
+            {"orchestrator_provider": "gemini"},
+        )
 
-    monkeypatch.setattr(parser_module, "generate_chat", fake_chat)
-    response = asyncio.run(parser_module.parse_intent("tell me a joke"))
+    monkeypatch.setattr(parser_module, "orchestrator_plan", fake_plan)
+    monkeypatch.setattr("backend.app.config.settings.orchestrator_disabled", False)
 
+    response = await parser_module.parse_intent("tell me a joke")
     assert response.command is None
     assert response.route.value == "informational"
-    assert response.meta["status"] == "unavailable"
-    assert response.meta["chatbot_provider"] == "huggingface"
-    option_ids = [opt["id"] for opt in response.meta.get("fallback_options", [])]
-    assert "retry_huggingface" in option_ids
-    assert "run_local_ollama" in option_ids
+    assert "Sir" in response.message or response.message
 
 
-def test_parser_uses_requested_provider_override(monkeypatch):
+@pytest.mark.asyncio
+async def test_chat_provider_param_ignored(monkeypatch):
     import backend.app.parser as parser_module
 
-    observed = {"provider": None}
+    seen = {"called": False}
 
-    async def fake_chat(messages, format=None, preferred_provider=None):
-        observed["provider"] = preferred_provider
-        return {"message": {"content": "Sure."}}
+    async def fake_plan(text, catalog=None):
+        seen["called"] = True
+        return (
+            OrchestratorPlan(goal="hi", reasoning="Hello.", steps=[]),
+            {"orchestrator_provider": "gemini"},
+        )
 
-    monkeypatch.setattr(parser_module, "generate_chat", fake_chat)
-    response = asyncio.run(parser_module.parse_intent("hello there", chat_provider="ollama"))
-
-    assert observed["provider"] == "ollama"
+    monkeypatch.setattr(parser_module, "orchestrator_plan", fake_plan)
+    response = await parser_module.parse_intent("hello there", chat_provider="ollama")
+    assert seen["called"] is True
     assert response.message

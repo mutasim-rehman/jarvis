@@ -61,7 +61,7 @@ def _is_provider_failure(message: str) -> bool:
 
 
 def _classify_llm_path(text: str) -> bool:
-    from backend.app.heuristics import classify_user_text
+    from backend.app.legacy_heuristics import classify_user_text
     from backend.app.parser import _quick_conversational_response
 
     if _quick_conversational_response(text):

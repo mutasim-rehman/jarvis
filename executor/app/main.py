@@ -7,7 +7,8 @@ if _root not in sys.path:
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
-from shared.schema import RunCommandRequest, RunCommandResponse, SCHEMA_VERSION
+from shared.schema import RunCommandRequest, RunCommandResponse, SCHEMA_VERSION, ToolCatalog
+from executor.app.capabilities import capabilities_service
 from executor.app.config import settings
 from executor.app.runner import run_command_with_allowlist_path
 
@@ -30,6 +31,21 @@ async def verify_dev_api_key(
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "schema_version": SCHEMA_VERSION}
+
+
+@app.get("/api/capabilities", response_model=ToolCatalog)
+async def get_capabilities(
+    refresh: bool = False,
+    _: None = Depends(verify_dev_api_key),
+):
+    return capabilities_service.get(refresh=refresh)
+
+
+@app.post("/api/capabilities/refresh", response_model=ToolCatalog)
+async def refresh_capabilities(
+    _: None = Depends(verify_dev_api_key),
+):
+    return capabilities_service.get(refresh=True)
 
 
 @app.post("/api/run", response_model=RunCommandResponse)

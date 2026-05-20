@@ -1,4 +1,12 @@
 """
+DEPRECATED: Hardcoded intent templates — superseded by runtime orchestrator planning.
+
+Kept for emergency rollback (ORCHESTRATOR_DISABLED=true) and documentation only.
+"""
+
+__DEPRECATED__ = True
+
+"""
 Intent templates for Phase 1 → executor handoff.
 
 How WORKFLOWS is used (see ``backend.app.parser._build_command``):

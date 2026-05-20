@@ -12,16 +12,16 @@ from backend.app.main import app
 client = TestClient(app)
 
 
-def test_parse_heuristic_path_under_budget():
+def test_parse_quick_path_under_budget():
     from backend.app.parser import parse_intent
     import asyncio
 
     started = time.perf_counter()
-    result = asyncio.run(parse_intent("play some music"))
+    result = asyncio.run(parse_intent("hello"))
     elapsed_ms = (time.perf_counter() - started) * 1000
 
-    assert result.command is not None
-    assert result.command.intent == "PLAY_MUSIC"
+    assert result.command is None
+    assert "service" in result.message.lower() or "assist" in result.message.lower()
     assert elapsed_ms < 350
 
 

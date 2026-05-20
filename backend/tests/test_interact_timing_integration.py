@@ -8,19 +8,27 @@ import pytest
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 
-def test_parse_intent_fallback_when_provider_unavailable(monkeypatch):
+def test_parse_intent_orchestrator_plan_on_music(monkeypatch):
     import backend.app.parser as parser_module
-    from backend.chatbot.types import ProviderUnavailableError
+    from shared.schema import OrchestratorPlan, Task
 
-    async def fake_chat(messages, format=None, preferred_provider=None):
-        del messages, format, preferred_provider
-        raise ProviderUnavailableError(provider="huggingface", reason="timeout")
+    async def fake_plan(text, catalog=None):
+        return (
+            OrchestratorPlan(
+                goal="music",
+                reasoning="On it.",
+                steps=[Task(action="PLAY_MUSIC", target=None)],
+            ),
+            {"orchestrator_provider": "gemini"},
+        )
 
-    monkeypatch.setattr(parser_module, "generate_chat", fake_chat)
+    monkeypatch.setattr(parser_module, "orchestrator_plan", fake_plan)
+    monkeypatch.setattr("backend.app.config.settings.orchestrator_disabled", False)
     result = asyncio.run(parser_module.parse_intent("play some music"))
 
     assert result.command is not None
-    assert result.command.intent == "PLAY_MUSIC"
+    assert result.command.intent == "ORCHESTRATED"
+    assert result.command.tasks[0].action == "PLAY_MUSIC"
 
 
 @pytest.mark.asyncio

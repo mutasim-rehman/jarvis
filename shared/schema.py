@@ -1,10 +1,11 @@
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Literal, Optional, Dict, Any, List
 from pydantic import BaseModel, Field, ConfigDict
 from .workflows import IntentType  # re-export for clients/tests
 
 # Bump when breaking API or command shape changes (executor / controllers depend on this).
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "2.0.0"
 
 
 class RouteKind(str, Enum):
@@ -94,3 +95,55 @@ class InteractResponse(BaseModel):
     assistant_response: AssistantResponse
     execution_result: Optional[RunCommandResponse] = None
     original_text: str
+
+
+# --- Orchestrator / tool catalog (schema 2.0) ---
+
+
+class ToolParameter(BaseModel):
+    name: str
+    type: Literal["string", "number", "boolean", "object", "array"] = "string"
+    description: str
+    required: bool = True
+    enum: Optional[List[str]] = None
+
+
+class ToolDefinition(BaseModel):
+    name: str = Field(description="Executor action name, e.g. PLAY_MUSIC.")
+    category: str = Field(description="music | fs | web | app | ai | routine | ...")
+    description: str = Field(description="Natural-language capability for the planner LLM.")
+    parameters: List[ToolParameter] = Field(default_factory=list)
+    requires: List[str] = Field(
+        default_factory=list,
+        description="Capability tags that must be present for this tool to be available.",
+    )
+    fallback_for: List[str] = Field(
+        default_factory=list,
+        description="Other tool names this tool can substitute when unavailable.",
+    )
+
+
+class ToolCapability(BaseModel):
+    tool: ToolDefinition
+    available: bool
+    reason: Optional[str] = None
+
+
+class ToolCatalog(BaseModel):
+    capabilities: List[ToolCapability] = Field(default_factory=list)
+    discovered_apps: List[str] = Field(default_factory=list)
+    capability_tags: List[str] = Field(
+        default_factory=list,
+        description="Active tags from env/tokens/probes (e.g. spotify_auth).",
+    )
+    refreshed_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+    )
+
+
+class OrchestratorPlan(BaseModel):
+    goal: str
+    steps: List[Task] = Field(default_factory=list)
+    fallback_steps: List[Task] = Field(default_factory=list)
+    reasoning: Optional[str] = None
+    clarification_question: Optional[str] = None

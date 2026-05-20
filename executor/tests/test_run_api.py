@@ -20,6 +20,23 @@ def test_health():
     assert r.json()["schema_version"] == SCHEMA_VERSION
 
 
+def test_capabilities_endpoint():
+    r = client.get("/api/capabilities")
+    assert r.status_code == 200
+    data = r.json()
+    assert "capabilities" in data
+    assert "discovered_apps" in data
+    assert "capability_tags" in data
+    assert len(data["capabilities"]) >= 1
+
+
+def test_capabilities_refresh_endpoint():
+    r = client.post("/api/capabilities/refresh")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data["capabilities"], list)
+
+
 def test_run_open_app_mock(monkeypatch):
     called = {}
 

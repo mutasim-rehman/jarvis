@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +29,14 @@ class Settings(BaseSettings):
     executor_api_key: str = ""
     executor_timeout_seconds: float = 120.0
     executor_inline_wait_seconds: float = 0.25
+
+    # Orchestrator (runtime planning)
+    orchestrator_disabled: bool = False
+    orchestrator_provider: str = "gemini"
+    orchestrator_model: str = "gemini-2.0-flash-lite"
+    orchestrator_catalog_ttl_seconds: float = 60.0
+    orchestrator_max_steps: int = 8
+    google_gemini_key: str = Field(default="", validation_alias="GOOGLE_GEMINI_KEY")
 
     # Speech-to-text (faster-whisper only)
     stt_provider: str = "faster_whisper"
