@@ -25,8 +25,6 @@ async def test_orchestrator_chat_only_response(monkeypatch):
         )
 
     monkeypatch.setattr(parser_module, "orchestrator_plan", fake_plan)
-    monkeypatch.setattr("backend.app.config.settings.orchestrator_disabled", False)
-
     response = await parser_module.parse_intent("tell me a joke")
     assert response.command is None
     assert response.route.value == "informational"

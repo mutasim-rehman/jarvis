@@ -61,13 +61,12 @@ def _is_provider_failure(message: str) -> bool:
 
 
 def _classify_llm_path(text: str) -> bool:
-    from backend.app.legacy_heuristics import classify_user_text
-    from backend.app.parser import _quick_conversational_response
+    from backend.app.heuristics import should_suppress_structured_command
+    from backend.app.parser import quick_conversational_response
 
-    if _quick_conversational_response(text):
+    if quick_conversational_response(text):
         return False
-    cls = classify_user_text(text)
-    if cls.force_intent or cls.suppress_structured_command:
+    if should_suppress_structured_command(text):
         return False
     return True
 

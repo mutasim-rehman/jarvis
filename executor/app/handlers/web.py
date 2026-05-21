@@ -103,7 +103,7 @@ def handle_open_url(task: Task, ctx: HandlerContext) -> TaskResult:
             message="OPEN_URL requires a target.",
         )
 
-    # Check for profile_index in task parameters (from workflows.py)
+    # Check for profile_index in task parameters (orchestrator plan)
     profile_index = getattr(task, "profile_index", None)
     # If not on task, check task.model_extra
     if profile_index is None and hasattr(task, "model_extra") and task.model_extra:

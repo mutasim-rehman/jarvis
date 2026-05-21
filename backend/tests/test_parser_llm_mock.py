@@ -22,7 +22,6 @@ def _mock_plan(monkeypatch, parser_module, plan: OrchestratorPlan, meta=None):
         return plan, meta or {"orchestrator_provider": "gemini"}
 
     monkeypatch.setattr(parser_module, "orchestrator_plan", fake_plan)
-    monkeypatch.setattr("backend.app.config.settings.orchestrator_disabled", False)
 
 
 def test_orchestrator_play_music(parser_module, monkeypatch):

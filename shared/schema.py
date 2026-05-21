@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal, Optional, Dict, Any, List
 from pydantic import BaseModel, Field, ConfigDict
-from .workflows import IntentType  # re-export for clients/tests
+from .intents import IntentType  # re-export for clients/tests
 
 # Bump when breaking API or command shape changes (executor / controllers depend on this).
 SCHEMA_VERSION = "2.1.0"

@@ -23,22 +23,11 @@ async def test_parse_orchestrator_plan(monkeypatch):
         )
 
     monkeypatch.setattr("backend.app.parser.orchestrator_plan", fake_plan)
-    monkeypatch.setattr("backend.app.config.settings.orchestrator_disabled", False)
-
     result = await parse_intent("open cursor")
     assert result.route == RouteKind.DESKTOP_EXECUTION
     assert result.command is not None
     assert result.command.intent == "ORCHESTRATED"
     assert result.command.tasks[0].action == "OPEN_APP"
-
-
-@pytest.mark.asyncio
-async def test_parse_legacy_rollback(monkeypatch):
-    monkeypatch.setattr("backend.app.config.settings.orchestrator_disabled", True)
-    result = await parse_intent("play some music")
-    assert result.command is not None
-    assert result.command.intent == "PLAY_MUSIC"
-    assert result.meta.get("path") == "legacy_heuristic_forced"
 
 
 def test_parse_quick_greeting():

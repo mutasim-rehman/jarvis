@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     executor_inline_wait_seconds: float = 0.25
 
     # Orchestrator (runtime planning)
-    orchestrator_disabled: bool = False
     orchestrator_provider: str = "gemini"
     orchestrator_model: str = "gemini-2.0-flash-lite"
     orchestrator_gemini: str = Field(

@@ -11,7 +11,6 @@ from shared.schema import ActionCommand, AssistantResponse, RouteKind, Task
 
 from backend.app.config import settings
 from backend.app.heuristics import should_suppress_structured_command
-from backend.app.legacy_router import parse_legacy
 from backend.app.orchestrator import plan as orchestrator_plan
 
 logger = logging.getLogger(__name__)
@@ -113,9 +112,6 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
     quick = quick_conversational_response(text)
     if quick:
         return _finish(_wrap(quick, None, {"path": "quick_path"}), "quick_path")
-
-    if settings.orchestrator_disabled:
-        return _finish(parse_legacy(text), "legacy_rollback")
 
     if should_suppress_structured_command(text):
         return _finish(

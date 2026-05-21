@@ -23,7 +23,6 @@ def test_parse_intent_orchestrator_plan_on_music(monkeypatch):
         )
 
     monkeypatch.setattr(parser_module, "orchestrator_plan", fake_plan)
-    monkeypatch.setattr("backend.app.config.settings.orchestrator_disabled", False)
     result = asyncio.run(parser_module.parse_intent("play some music"))
 
     assert result.command is not None
