@@ -32,15 +32,18 @@ Example flow: *"open chrome"* → `{ intent: OPEN_APP, target: chrome }` → exe
 
 ## Phases
 
-Work is staged in seven phases. Each phase has a dedicated plan under [`docs/`](docs/).
+Work is staged in phases (including 4.5). Each phase has a dedicated plan under [`docs/`](docs/).
+
+**Current focus:** Phase 4 **desktop** controller, then **Phase 4.5** (accounts & preferences) and **Phase 5** (memory & adaptive intelligence). Phase 4 **mobile** and **Raspberry Pi** clients are deferred to the end of Phase 4.
 
 | Phase | Focus | Doc |
 |-------|--------|-----|
 | 1 | Backend core (NLP → intent, command structuring) | [phase-01-backend-core.md](docs/phase-01-backend-core.md) |
 | 2 | Executor (actions, local testing) | [phase-02-executor.md](docs/phase-02-executor.md) |
 | 3 | Integration (backend ↔ executor, end-to-end) | [phase-03-integration.md](docs/phase-03-integration.md) |
-| 4 | Controller (mobile voice + desktop UI + Raspberry Pi Zero 2W layer) | [phase-04-controller.md](docs/phase-04-controller.md) |
-| 5 | Memory & context | [phase-05-memory-context.md](docs/phase-05-memory-context.md) |
+| 4 | Controller (desktop now; mobile + Pi later) | [phase-04-controller.md](docs/phase-04-controller.md) |
+| 4.5 | User accounts & preference initialization | [phase-04.5-accounts-preferences.md](docs/phase-04.5-accounts-preferences.md) |
+| 5 | Memory, context awareness & adaptive intelligence | [phase-05-memory-context.md](docs/phase-05-memory-context.md) |
 | 6 | Multi-step automation & workflows | [phase-06-automation.md](docs/phase-06-automation.md) |
 | 7 | Hub (website + demos) | [phase-07-hub.md](docs/phase-07-hub.md) |
 
@@ -50,7 +53,7 @@ Work is staged in seven phases. Each phase has a dedicated plan under [`docs/`](
 - **Moderate:** *"open DSA folder and code"* → folder + IDE  
 - **Advanced:** *"start my assignment"* → LMS → download → setup → code  
 - **Context-aware (later):** *"continue work"* → resumes last session  
-- **Mobile control:** phone issues command → PC executes remotely  
+- **Mobile / Pi control (Phase 4b):** same account on phone and laptop → QR pairing → phone sends command with target laptop ID → server verifies device link → PC executes remotely  
 
 ## Goal
 

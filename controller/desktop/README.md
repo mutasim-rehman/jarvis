@@ -14,6 +14,10 @@ Electron + React desktop app that hides manual terminal setup and runs Jarvis se
 - Provides a chat console that calls backend `/api/interact`.
 - Uses backend `/api/tts` (Piper) for speak-mode assistant playback.
 
+### Remote control from phone or Pi (planned)
+
+The laptop is the **pairing host**: it will show a short-lived **QR code** (pairing token + laptop device ID) for the mobile or Raspberry Pi controller to scan. After the server links both devices under the same user account, remote commands from phone/Pi include the target laptop ID and are routed only if the device link is authorized. See [Phase 4 controller](../../docs/phase-04-controller.md#account-devices--pairing-phone--pi--laptop) and [mobile](../mobile/README.md) / [pi](../pi/README.md) READMEs.
+
 ## Prerequisites
 
 - Node.js 20+

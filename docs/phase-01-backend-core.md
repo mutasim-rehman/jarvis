@@ -29,8 +29,9 @@ Primary chatbot runs via Hugging Face Space API; Ollama can remain available loc
 ## Out of scope (this phase)
 
 - Real OS execution (Phase 2).
-- Persistent user memory (Phase 5).
-- Mobile/desktop UI (Phase 4).
+- User accounts and explicit preferences (Phase 4.5).
+- Persistent user memory and adaptive context (Phase 5).
+- Mobile/desktop UI (Phase 4; mobile deferred).
 
 ## Deliverables
 

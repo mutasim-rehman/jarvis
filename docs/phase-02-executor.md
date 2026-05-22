@@ -29,8 +29,9 @@ The executor does **not** run Ollama; it only executes structured commands. No L
 ## Out of scope (this phase)
 
 - Full backend integration (Phase 3).
-- Flutter and web controllers (Phase 4).
-- Long-term memory (Phase 5).
+- Flutter and web controllers (Phase 4; mobile/Pi deferred).
+- User accounts and preferences (Phase 4.5).
+- Long-term memory and adaptive context (Phase 5).
 
 ## Deliverables
 

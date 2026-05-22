@@ -37,7 +37,7 @@
 
 ## Dependencies
 
-- Phase 2–3 (executor + integration); Phase 5 helps for “my assignment” style shortcuts.
+- Phase 2–3 (executor + integration); Phase 4.5 + Phase 5 help for “my assignment” style shortcuts and personalized workflows.
 
 ## Risks / notes
 
