@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@theme {
+  --color-jarvis-bg: #090c14;
+  --color-jarvis-fg: #eef3ff;
+  --color-jarvis-muted: #9aa8c7;
+  --color-jarvis-accent: #863bff;
+  --color-jarvis-accent-dim: #5c28b8;
+  --color-jarvis-glow: #47bfff;
+  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+  background: var(--color-jarvis-bg);
+}
+
+body {
+  margin: 0;
+}
+
+.glow-orb {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(80px);
+  opacity: 0.45;
+}
+
+.section-anchor {
+  scroll-margin-top: 96px;
+}
+
+.glass-panel {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(
+      140deg,
+      rgba(255, 255, 255, 0.08),
+      rgba(255, 255, 255, 0.01) 40%
+    ),
+    rgba(8, 11, 19, 0.65);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.gradient-border {
+  position: relative;
+  border-radius: 1rem;
+}
+
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    130deg,
+    rgba(134, 59, 255, 0.55),
+    rgba(71, 191, 255, 0.3),
+    rgba(255, 255, 255, 0.08)
+  );
+  z-index: -1;
+}
+
+.legal-prose {
+  color: var(--color-jarvis-muted);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.legal-prose h2 {
+  color: var(--color-jarvis-fg);
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.legal-prose h3 {
+  color: var(--color-jarvis-fg);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.legal-prose p {
+  margin-bottom: 1rem;
+}
+
+.legal-prose ul,
+.legal-prose ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.legal-prose ul {
+  list-style-type: disc;
+}
+
+.legal-prose ol {
+  list-style-type: decimal;
+}
+
+.legal-prose li {
+  margin-bottom: 0.35rem;
+}
+
+.legal-prose a {
+  color: var(--color-jarvis-glow);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.legal-prose a:hover {
+  color: var(--color-jarvis-fg);
+}
+
+.legal-prose strong {
+  color: var(--color-jarvis-fg);
+  font-weight: 600;
+}

@@ -1,0 +1,80 @@
+---
+import { site } from "../config/site";
+const year = new Date().getFullYear();
+---
+
+<footer class="border-t border-white/5 bg-black/20">
+  <div class="mx-auto max-w-6xl px-6 py-12">
+    <div class="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <p class="font-semibold text-white">{site.name}</p>
+        <p class="mt-2 max-w-sm text-sm text-jarvis-muted">{site.description}</p>
+      </div>
+      <div class="flex flex-wrap gap-x-10 gap-y-4 text-sm">
+        <div>
+          <p class="mb-2 font-medium text-white">Product</p>
+          <ul class="space-y-2 text-jarvis-muted">
+            <li><a href="/#demo" class="hover:text-white">Live flow</a></li>
+            <li><a href="/#features" class="hover:text-white">Features</a></li>
+            <li><a href="/#architecture" class="hover:text-white">Architecture</a></li>
+            <li><a href="/#faq" class="hover:text-white">FAQ</a></li>
+          </ul>
+        </div>
+        {
+          site.docsUrl ? (
+            <div>
+              <p class="mb-2 font-medium text-white">Resources</p>
+              <ul class="space-y-2 text-jarvis-muted">
+                <li>
+                  <a
+                    href={site.docsUrl}
+                    class="hover:text-white"
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    Documentation
+                  </a>
+                </li>
+                {
+                  site.githubUrl ? (
+                    <li>
+                      <a
+                        href={site.githubUrl}
+                        class="hover:text-white"
+                        rel="noopener noreferrer"
+                        target="_blank"
+                      >
+                        Source code
+                      </a>
+                    </li>
+                  ) : null
+                }
+              </ul>
+            </div>
+          ) : null
+        }
+        <div>
+          <p class="mb-2 font-medium text-white">Legal</p>
+          <ul class="space-y-2 text-jarvis-muted">
+            <li><a href="/privacy" class="hover:text-white">Privacy Policy</a></li>
+            <li><a href="/terms" class="hover:text-white">Terms of Service</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="mb-2 font-medium text-white">Contact</p>
+          <ul class="space-y-2 text-jarvis-muted">
+            <li>
+              <a href={`mailto:${site.contactEmail}`} class="hover:text-white">
+                {site.contactEmail}
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <p class="mt-10 border-t border-white/5 pt-8 text-center text-xs text-jarvis-muted sm:text-left">
+      © {year} {site.name}. JARVIS executes tasks on devices you control; it is not unattended automation
+      without your consent.
+    </p>
+  </div>
+</footer>

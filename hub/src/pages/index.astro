@@ -1,0 +1,257 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../config/site";
+
+const pillars = [
+  {
+    title: "Intent intelligence",
+    body: "Natural language is parsed into typed intents and structured arguments so execution is deterministic, auditable, and recoverable.",
+  },
+  {
+    title: "Local-first execution",
+    body: "Actions run through a desktop executor on your own machine. JARVIS coordinates; your device performs.",
+  },
+  {
+    title: "Adaptive orchestration",
+    body: "Complex requests are turned into multi-step plans with retries and replans, then streamed back as status updates.",
+  },
+];
+
+const integrations = [
+  "Google OAuth + Classroom",
+  "Spotify",
+  "Browser automation",
+  "Desktop app launching",
+  "File and workspace actions",
+  "Custom capability handlers",
+];
+
+const timeline = [
+  { phase: "Phase 1-3", note: "Backend + executor contracts + end-to-end execution pipeline" },
+  { phase: "Phase 4", note: "Desktop controller and operations visibility" },
+  { phase: "Phase 4.5", note: "Accounts, OAuth, and explicit preference initialization" },
+  { phase: "Phase 5", note: "Memory and adaptive personalization" },
+  { phase: "Phase 6", note: "Multi-step automation and workflow planning" },
+  { phase: "Phase 7", note: "Public hub, legal pages, and product trust layer" },
+];
+
+const faqs = [
+  {
+    q: "Is JARVIS just another chatbot?",
+    a: "No. Chat is only the interface. JARVIS is built around understand → decide → execute, so requests become actionable intents and verified steps.",
+  },
+  {
+    q: "Does JARVIS run actions without me knowing?",
+    a: "No. Actions run on devices you pair and command. The product is intentionally positioned around user-directed execution, not hidden unattended automation.",
+  },
+  {
+    q: "Why do I need privacy and terms pages now?",
+    a: "OAuth providers require a public product presence and legal disclosures. The same pages also set trust expectations before account rollout.",
+  },
+];
+---
+
+<BaseLayout title={site.name}>
+  <section class="section-anchor relative overflow-hidden px-6 pb-20 pt-16 lg:pt-24">
+    <div class="glow-orb -left-20 top-0 h-72 w-72 bg-jarvis-accent" aria-hidden="true"></div>
+    <div class="glow-orb -right-10 top-20 h-80 w-80 bg-jarvis-glow/80" aria-hidden="true"></div>
+    <div
+      class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(134,59,255,0.25),transparent)]"
+      aria-hidden="true"
+    />
+    <div class="relative mx-auto max-w-5xl text-center">
+      <p class="text-sm font-medium uppercase tracking-widest text-jarvis-accent">
+        Product hub
+      </p>
+      <h1 class="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
+        {site.tagline}
+      </h1>
+      <p class="mx-auto mt-6 max-w-2xl text-lg text-jarvis-muted">
+        {site.description} Speak or type a goal—JARVIS plans structured steps and your desktop
+        executor carries them out with clear status back to you.
+      </p>
+      <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <a
+          href="#demo"
+          class="rounded-xl bg-jarvis-accent px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-jarvis-accent/25 transition hover:bg-jarvis-accent-dim"
+        >
+          Explore the flow
+        </a>
+        <a
+          href="/privacy"
+          class="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-jarvis-fg transition hover:border-white/30 hover:bg-white/5"
+        >
+          Privacy Policy
+        </a>
+      </div>
+      <div class="mx-auto mt-10 grid max-w-4xl gap-4 sm:grid-cols-3">
+        <div class="glass-panel rounded-xl px-4 py-4">
+          <p class="text-xs uppercase tracking-wider text-jarvis-muted">Pipeline</p>
+          <p class="mt-1 text-sm text-white">Controller → Backend → Executor</p>
+        </div>
+        <div class="glass-panel rounded-xl px-4 py-4">
+          <p class="text-xs uppercase tracking-wider text-jarvis-muted">Control mode</p>
+          <p class="mt-1 text-sm text-white">Voice + Text + Structured intents</p>
+        </div>
+        <div class="glass-panel rounded-xl px-4 py-4">
+          <p class="text-xs uppercase tracking-wider text-jarvis-muted">Security model</p>
+          <p class="mt-1 text-sm text-white">User-directed, consented execution</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="demo" class="section-anchor border-y border-white/5 bg-black/20 px-6 py-20">
+    <div class="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2 lg:items-stretch">
+      <article class="gradient-border">
+        <div class="glass-panel h-full rounded-2xl p-8">
+          <p class="text-xs uppercase tracking-wider text-jarvis-glow">Live command flow</p>
+          <h2 class="mt-3 text-2xl font-semibold text-white sm:text-3xl">
+            From prompt to execution status
+          </h2>
+          <ol class="mt-6 space-y-4 text-sm text-jarvis-muted">
+            <li><strong class="text-white">1.</strong> User says: "Start my assignment workflow."</li>
+            <li><strong class="text-white">2.</strong> Backend classifies intent + generates structured tasks.</li>
+            <li><strong class="text-white">3.</strong> Orchestrator checks capability registry + execution rules.</li>
+            <li><strong class="text-white">4.</strong> Executor performs actions and streams confirmations.</li>
+            <li><strong class="text-white">5.</strong> If a step fails, planner replans and continues safely.</li>
+          </ol>
+        </div>
+      </article>
+      <article class="rounded-2xl border border-white/10 bg-jarvis-bg/70 p-8">
+        <p class="text-xs uppercase tracking-wider text-jarvis-muted">Sample payload</p>
+        <pre class="mt-4 overflow-x-auto rounded-xl border border-white/10 bg-black/30 p-4 text-xs text-jarvis-fg"><code>{`{
+  "intent": "OPEN_ASSIGNMENT_WORKFLOW",
+  "tasks": [
+    { "type": "OPEN_URL", "args": { "url": "https://classroom.google.com" } },
+    { "type": "FETCH_ASSIGNMENTS", "provider": "google_classroom" },
+    { "type": "OPEN_IDE", "args": { "workspace": "dsa/" } }
+  ],
+  "safety": { "requires_user_intent": true }
+}`}</code></pre>
+        <p class="mt-4 text-sm text-jarvis-muted">
+          JARVIS keeps a clear separation between reasoning and execution so behavior stays inspectable.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section id="features" class="section-anchor px-6 py-20">
+    <div class="mx-auto max-w-6xl">
+      <h2 class="text-center text-2xl font-semibold text-white sm:text-3xl">Built to act, not just chat</h2>
+      <p class="mx-auto mt-4 max-w-2xl text-center text-jarvis-muted">
+        Unlike a plain chatbot, JARVIS maps language to intents and runs real workflows on your machine.
+      </p>
+      <div class="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {pillars.map((pillar) => (
+          <article class="glass-panel rounded-2xl p-6">
+            <h3 class="text-lg font-semibold text-white">{pillar.title}</h3>
+            <p class="mt-3 text-sm text-jarvis-muted">{pillar.body}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture" class="section-anchor border-t border-white/5 bg-black/20 px-6 py-20">
+    <div class="mx-auto max-w-6xl lg:grid lg:grid-cols-2 lg:gap-16 lg:items-center">
+      <div>
+        <h2 class="text-2xl font-semibold text-white sm:text-3xl">How it works</h2>
+        <p class="mt-4 text-jarvis-muted">
+          JARVIS is distributed by design: controllers talk to a backend brain; the backend issues commands
+          to an executor on the machine where work happens.
+        </p>
+        <ol class="mt-8 space-y-4 text-sm text-jarvis-muted">
+          <li class="flex gap-3">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-jarvis-accent/20 text-xs font-bold text-jarvis-accent">1</span>
+            <span><strong class="text-white">You</strong> speak or type through a controller (desktop, mobile, or Pi).</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-jarvis-accent/20 text-xs font-bold text-jarvis-accent">2</span>
+            <span><strong class="text-white">Backend</strong> understands intent, plans steps, and routes execution requests.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-jarvis-accent/20 text-xs font-bold text-jarvis-accent">3</span>
+            <span><strong class="text-white">Executor</strong> performs OS-level actions and reports status back to you.</span>
+          </li>
+        </ol>
+      </div>
+      <div class="mt-10 rounded-2xl border border-jarvis-accent/30 bg-gradient-to-br from-jarvis-accent/10 to-transparent p-8 lg:mt-0">
+        <p class="font-mono text-xs uppercase tracking-wider text-jarvis-glow">Example</p>
+        <p class="mt-4 text-lg text-white">&ldquo;Open my DSA folder and start coding&rdquo;</p>
+        <p class="mt-4 text-sm text-jarvis-muted">
+          → intent: open folder + launch IDE → executor runs on your PC → you get confirmation in the UI.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="integrations" class="section-anchor px-6 py-20">
+    <div class="mx-auto max-w-6xl">
+      <h2 class="text-2xl font-semibold text-white sm:text-3xl">Integration-ready foundation</h2>
+      <p class="mt-4 max-w-2xl text-jarvis-muted">
+        OAuth-based connections and capability handlers make JARVIS extendable while keeping auth boundaries explicit.
+      </p>
+      <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {integrations.map((item) => (
+          <div class="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-4 text-sm text-jarvis-fg">
+            {item}
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section id="roadmap" class="section-anchor border-y border-white/5 bg-black/20 px-6 py-20">
+    <div class="mx-auto max-w-6xl">
+      <h2 class="text-2xl font-semibold text-white sm:text-3xl">Roadmap context</h2>
+      <p class="mt-4 max-w-2xl text-jarvis-muted">
+        The hub reflects completed and near-term phases so messaging stays aligned with actual system capability.
+      </p>
+      <div class="mt-10 grid gap-4 md:grid-cols-2">
+        {timeline.map((entry) => (
+          <article class="glass-panel rounded-xl px-5 py-5">
+            <p class="text-sm font-semibold text-white">{entry.phase}</p>
+            <p class="mt-1 text-sm text-jarvis-muted">{entry.note}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section id="safety" class="section-anchor px-6 py-20">
+    <div class="mx-auto max-w-3xl text-center">
+      <h2 class="text-2xl font-semibold text-white sm:text-3xl">Trust & safety</h2>
+      <p class="mt-4 text-jarvis-muted">
+        JARVIS can change files, launch applications, and use connected accounts only when you ask and only
+        on devices you pair. We do not market unattended automation—you approve meaningful actions on your
+        machines. Sign-in and integrations use industry-standard OAuth; see our legal pages for what we
+        collect and how to delete your data.
+      </p>
+      <div class="mt-8 flex flex-wrap justify-center gap-4 text-sm">
+        <a href="/privacy" class="text-jarvis-glow underline underline-offset-4 hover:text-white">
+          Privacy Policy
+        </a>
+        <a href="/terms" class="text-jarvis-glow underline underline-offset-4 hover:text-white">
+          Terms of Service
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="section-anchor border-t border-white/5 bg-black/20 px-6 py-20">
+    <div class="mx-auto max-w-4xl">
+      <h2 class="text-center text-2xl font-semibold text-white sm:text-3xl">FAQ</h2>
+      <div class="mt-10 space-y-4">
+        {faqs.map((item) => (
+          <details class="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+            <summary class="cursor-pointer list-none text-base font-medium text-white">
+              {item.q}
+            </summary>
+            <p class="mt-3 text-sm text-jarvis-muted">{item.a}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</BaseLayout>

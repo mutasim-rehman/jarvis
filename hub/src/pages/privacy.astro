@@ -1,0 +1,139 @@
+---
+import LegalLayout from "../layouts/LegalLayout.astro";
+import { site } from "../config/site";
+
+const lastUpdated = "May 24, 2026";
+---
+
+<LegalLayout
+  title="Privacy Policy"
+  description={`How ${site.name} collects, uses, and protects your information.`}
+  lastUpdated={lastUpdated}
+>
+  <p>
+    This Privacy Policy describes how <strong>{site.name}</strong> (&ldquo;we,&rdquo; &ldquo;us,&rdquo; or
+    &ldquo;our&rdquo;) handles information when you use our website, sign in with Google or other providers,
+    run desktop or mobile clients, or connect optional integrations such as Spotify or Google Classroom.
+  </p>
+  <p>
+    By using JARVIS, you agree to this policy. If you do not agree, please do not use the service.
+  </p>
+
+  <h2>1. Who we are</h2>
+  <p>
+    JARVIS is a personal AI execution system: natural language is converted into structured intent and
+    executed on devices you control. Contact: <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+  </p>
+
+  <h2>2. Information we collect</h2>
+  <h3>Account and authentication</h3>
+  <p>When you sign in (for example with Google OAuth), we may receive:</p>
+  <ul>
+    <li>A stable provider subject identifier and basic profile fields (such as name and email) as permitted by the provider.</li>
+    <li>OAuth tokens required to maintain your session and, with your consent, to access connected services.</li>
+  </ul>
+  <h3>Voice and conversation</h3>
+  <p>
+    If you use voice features, audio may be processed for speech-to-text on your device or via configured
+    backend services. Conversation text and generated responses may be stored to provide continuity and
+    improve your experience when memory features are enabled.
+  </p>
+  <h3>Execution and device data</h3>
+  <p>
+    Commands, task status, device identifiers used for pairing, and logs needed to operate the executor may
+    be processed. Many actions run locally on your machine; only data required for remote control or cloud
+    sync is transmitted to our servers.
+  </p>
+  <h3>Preferences and optional imports</h3>
+  <p>
+    Onboarding preferences, personality sliders, and optional imported JSON or taste data (e.g. Spotify likes,
+    YouTube history) are stored per account when you provide them. You can skip optional steps.
+  </p>
+  <h3>Website</h3>
+  <p>
+    Our public site may log standard technical data (IP address, browser type, pages viewed) for security and
+    operations. We do not use invasive third-party advertising trackers on this site.
+  </p>
+
+  <h2>3. How we use information</h2>
+  <p>We use collected information to:</p>
+  <ul>
+    <li>Authenticate you and manage your account and sessions.</li>
+    <li>Parse requests, plan tasks, and execute commands you initiate.</li>
+    <li>Personalize behavior according to your stated preferences.</li>
+    <li>Operate, secure, and improve JARVIS; diagnose errors; comply with law.</li>
+  </ul>
+  <p>We do not sell your personal information.</p>
+
+  <h2>4. Legal bases (where applicable)</h2>
+  <p>
+    Depending on your region, we rely on performance of a contract (providing the service), legitimate
+    interests (security, improvement), and consent (optional integrations and certain processing).
+  </p>
+
+  <h2>5. Sharing and subprocessors</h2>
+  <p>We may share data with:</p>
+  <ul>
+    <li><strong>Identity providers</strong> (e.g. Google) when you choose to sign in or connect an integration.</li>
+    <li><strong>Infrastructure and AI providers</strong> you or we configure (e.g. hosting, model APIs) solely to deliver features you use.</li>
+    <li><strong>Legal authorities</strong> when required by law or to protect rights and safety.</li>
+  </ul>
+  <p>
+    Third-party services have their own privacy policies. OAuth tokens for integrations like Google Classroom
+    or Spotify are stored according to product settings and can be revoked by disconnecting the integration
+    or deleting your account.
+  </p>
+
+  <h2>6. Retention</h2>
+  <p>
+    We retain account and preference data while your account is active. Logs and conversation history may be
+    retained for a limited period for operations and, where enabled, memory features. You may request deletion
+    as described below.
+  </p>
+
+  <h2>7. Security</h2>
+  <p>
+    We use reasonable technical and organizational measures (encryption in transit, access controls, secure
+    token storage patterns). No method of transmission or storage is 100% secure; use strong device security
+    and protect your account credentials.
+  </p>
+
+  <h2>8. Your rights and choices</h2>
+  <p>Depending on your location, you may have the right to:</p>
+  <ul>
+    <li>Access, correct, or export your personal data.</li>
+    <li>Delete your account and associated preferences and memory data.</li>
+    <li>Withdraw consent for optional processing.</li>
+    <li>Object to or restrict certain processing.</li>
+  </ul>
+  <p>
+    To exercise these rights, contact <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>. You may
+    also revoke OAuth access in your Google Account settings at
+    <a href="https://myaccount.google.com/permissions" rel="noopener noreferrer" target="_blank"
+      >myaccount.google.com/permissions</a>.
+  </p>
+
+  <h2>9. Children</h2>
+  <p>
+    JARVIS is not directed at children under 13 (or the minimum age in your jurisdiction). We do not knowingly
+    collect data from children.
+  </p>
+
+  <h2>10. International transfers</h2>
+  <p>
+    If you use JARVIS from outside the country where our servers run, your data may be processed in other
+    regions with appropriate safeguards where required.
+  </p>
+
+  <h2>11. Changes</h2>
+  <p>
+    We may update this policy. We will post the new date at the top of this page. Material changes may be
+    communicated through the app or email where appropriate.
+  </p>
+
+  <h2>12. Contact</h2>
+  <p>
+    Questions about this Privacy Policy: <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+    See also our <a href="/terms">Terms of Service</a>.
+  </p>
+</LegalLayout>

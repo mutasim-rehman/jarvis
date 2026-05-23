@@ -1,0 +1,124 @@
+---
+import LegalLayout from "../layouts/LegalLayout.astro";
+import { site } from "../config/site";
+
+const lastUpdated = "May 24, 2026";
+---
+
+<LegalLayout
+  title="Terms of Service"
+  description={`Terms and conditions for using ${site.name}.`}
+  lastUpdated={lastUpdated}
+>
+  <p>
+    These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of <strong>{site.name}</strong>
+    software, APIs, website, and related services (collectively, the &ldquo;Service&rdquo;). By using the
+    Service, you agree to these Terms.
+  </p>
+
+  <h2>1. Eligibility</h2>
+  <p>
+    You must be at least 13 years old (or the age required in your country) and able to form a binding
+    contract. If you use the Service on behalf of an organization, you represent that you have authority to
+    bind that organization.
+  </p>
+
+  <h2>2. The Service</h2>
+  <p>
+    JARVIS interprets natural language, produces structured plans, and can execute tasks on computers and
+    devices you configure. Features vary by platform and release; we may change, suspend, or discontinue
+    features with reasonable notice where practicable.
+  </p>
+  <p>
+    The Service is provided on an evolving basis during active development. It is not guaranteed to be
+    error-free or available at all times.
+  </p>
+
+  <h2>3. Your account and security</h2>
+  <p>
+    You are responsible for safeguarding credentials, OAuth authorizations, and devices paired to your
+    account. Notify us promptly at <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a> if you
+    suspect unauthorized access.
+  </p>
+
+  <h2>4. Acceptable use</h2>
+  <p>You agree not to:</p>
+  <ul>
+    <li>Use the Service for unlawful, harmful, or fraudulent purposes.</li>
+    <li>Attempt to access systems, accounts, or data without authorization.</li>
+    <li>Reverse engineer or circumvent security except where law expressly permits.</li>
+    <li>Overload or disrupt the Service or third-party APIs connected through JARVIS.</li>
+    <li>Use automation to harm others or to operate devices without the owner&rsquo;s knowledge and consent.</li>
+  </ul>
+  <p>
+    You remain responsible for actions JARVIS performs on your machines after you issue commands or approve
+    steps.
+  </p>
+
+  <h2>5. Third-party services</h2>
+  <p>
+    Sign-in and integrations (Google, GitHub, Spotify, YouTube, Classroom, and others) are subject to those
+    providers&rsquo; terms and policies. We are not responsible for third-party services.
+  </p>
+
+  <h2>6. Intellectual property</h2>
+  <p>
+    We retain rights in the Service, branding, and documentation. Open-source components are licensed under
+    their respective licenses. You retain rights in content you provide; you grant us a limited license to
+    process that content solely to operate and improve the Service for you.
+  </p>
+
+  <h2>7. Privacy</h2>
+  <p>
+    Our <a href="/privacy">Privacy Policy</a> explains how we handle personal data and is incorporated into
+    these Terms.
+  </p>
+
+  <h2>8. Disclaimers</h2>
+  <p>
+    THE SERVICE IS PROVIDED &ldquo;AS IS&rdquo; AND &ldquo;AS AVAILABLE&rdquo; WITHOUT WARRANTIES OF ANY KIND,
+    WHETHER EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+    NON-INFRINGEMENT. JARVIS MAY MISUNDERSTAND REQUESTS OR EXECUTE INCORRECT ACTIONS; REVIEW IMPORTANT
+    OUTCOMES BEFORE RELYING ON THEM.
+  </p>
+
+  <h2>9. Limitation of liability</h2>
+  <p>
+    TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE AND OUR CONTRIBUTORS WILL NOT BE LIABLE FOR INDIRECT,
+    INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOSS OF DATA, PROFITS, OR GOODWILL,
+    ARISING FROM YOUR USE OF THE SERVICE. OUR TOTAL LIABILITY FOR ANY CLAIM RELATING TO THE SERVICE IS
+    LIMITED TO THE GREATER OF (A) AMOUNTS YOU PAID US IN THE TWELVE MONTHS BEFORE THE CLAIM OR (B) ONE
+    HUNDRED U.S. DOLLARS (USD $100), EXCEPT WHERE LIABILITY CANNOT BE LIMITED BY LAW.
+  </p>
+
+  <h2>10. Indemnification</h2>
+  <p>
+    You will defend and indemnify us against claims arising from your misuse of the Service, violation of
+    these Terms, or infringement of third-party rights, to the extent permitted by law.
+  </p>
+
+  <h2>11. Termination</h2>
+  <p>
+    You may stop using the Service at any time. We may suspend or terminate access if you breach these Terms
+    or if required for security or legal reasons. Provisions that by nature should survive (disclaimers,
+    liability limits, indemnity) survive termination.
+  </p>
+
+  <h2>12. Governing law</h2>
+  <p>
+    These Terms are governed by the laws of the jurisdiction where the operator of JARVIS is established,
+    without regard to conflict-of-law rules, except where mandatory consumer protections in your country
+    apply. Disputes should first be raised with <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+  </p>
+
+  <h2>13. Changes</h2>
+  <p>
+    We may modify these Terms. The &ldquo;Last updated&rdquo; date reflects the current version. Continued
+    use after changes constitutes acceptance where permitted by law.
+  </p>
+
+  <h2>14. Contact</h2>
+  <p>
+    Questions about these Terms: <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>.
+  </p>
+</LegalLayout>

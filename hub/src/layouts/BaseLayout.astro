@@ -1,0 +1,56 @@
+---
+import "../styles/global.css";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import { site } from "../config/site";
+
+interface Props {
+  title: string;
+  description?: string;
+  ogType?: "website" | "article";
+  ogImage?: string;
+}
+
+const {
+  title,
+  description = site.description,
+  ogType = "website",
+  ogImage = "/favicon.svg",
+} = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
+const ogImageUrl = new URL(ogImage, Astro.site ?? Astro.url).href;
+const fullTitle = title === site.name ? `${site.name} — ${site.tagline}` : `${title} | ${site.name}`;
+---
+
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:site_name" content={site.name} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="theme-color" content="#090c14" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{fullTitle}</title>
+  </head>
+  <body class="min-h-screen bg-jarvis-bg text-jarvis-fg antialiased">
+    <div class="flex min-h-screen flex-col">
+      <SiteHeader />
+      <main class="flex-1">
+        <slot />
+      </main>
+      <SiteFooter />
+    </div>
+  </body>
+</html>
