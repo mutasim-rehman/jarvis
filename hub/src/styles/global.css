@@ -19,6 +19,11 @@ body {
   margin: 0;
 }
 
+/* ── REMOVED OLD PAGE-SPECIFIC CLASSES ──
+   .workspace-sidebar, .chat-row, .voice-dot are no longer used (scroll homepage replaced them).
+   .glow-orb and .glass-panel kept for potential reuse.
+*/
+
 .glow-orb {
   position: absolute;
   border-radius: 9999px;
@@ -32,6 +37,7 @@ body {
   scroll-margin-top: 96px;
 }
 
+/* retained for potential use */
 .glass-panel {
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: linear-gradient(
@@ -63,65 +69,13 @@ body {
   z-index: -1;
 }
 
-.workspace-sidebar {
-  position: sticky;
-  top: 88px;
-  align-self: start;
-}
-
-.chat-row {
-  transition: transform 0.24s ease, border-color 0.24s ease, background-color 0.24s ease;
-}
-
-.chat-row:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.16);
-}
-
-.voice-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #ffb36b;
-  box-shadow: 0 0 0 0 rgba(255, 179, 107, 0.5);
-  animation: pulse-dot 2s ease-out infinite;
-}
-
-.jarvis-visual-wrap {
-  position: relative;
-  width: 100%;
-  height: min(52vw, 320px);
-  min-height: 240px;
-  background: #050505;
-}
-
-.jarvis-visual-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  pointer-events: none;
-}
-
-@keyframes pulse-dot {
-  0% { box-shadow: 0 0 0 0 rgba(255, 179, 107, 0.5); }
-  70% { box-shadow: 0 0 0 12px rgba(255, 179, 107, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 179, 107, 0); }
-}
-
 @keyframes drift {
   0%, 100% { transform: translate3d(0, 0, 0); }
-  50% { transform: translate3d(10px, -10px, 0); }
+  50%       { transform: translate3d(10px, -10px, 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glow-orb,
-  .voice-dot,
-  .chat-row {
-    animation: none !important;
-    transition: none !important;
-  }
+  .glow-orb { animation: none !important; }
 }
 
 .legal-prose {

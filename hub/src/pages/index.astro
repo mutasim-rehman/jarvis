@@ -1,162 +1,641 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import JarvisVisual from "../components/JarvisVisual.astro";
 import { site } from "../config/site";
 
-const modules = [
+const sections = [
   {
     id: "chat",
-    title: "Chat",
-    body: "Natural conversation with intent-aware understanding, so quick questions and actionable commands coexist in one flow.",
+    label: "Chat",
+    title: "Conversation that\nunderstands intent",
+    body: "Natural language with execution awareness. Quick questions and actionable commands coexist in one seamless, voice-first flow.",
+    chips: ["Intent routing", "Context memory", "Voice + text"],
   },
   {
     id: "automations",
-    title: "Automations",
-    body: "Build and run multi-step routines with safe execution boundaries, retries, and transparent status updates.",
+    label: "Automations",
+    title: "Multi-step plans,\nsafely executed",
+    body: "Structured task chains with retries, safe replanning, and transparent status streamed back on every action.",
+    chips: ["DAG execution", "Auto-replan", "Live status"],
   },
   {
     id: "memory",
-    title: "Memory",
-    body: "Preference-aware assistance that remembers context over time without turning the workspace into noise.",
+    label: "Memory",
+    title: "Remembers\nwhat matters",
+    body: "Preference-aware context that builds over time — adaptive to how you work, quiet when you don't need it.",
+    chips: ["Per-user context", "Adaptive prefs", "Exportable"],
   },
   {
     id: "devices",
-    title: "Devices",
-    body: "Pair desktop, mobile, and Pi clients under one account and control where each action is executed.",
+    label: "Devices",
+    title: "One account,\nevery device",
+    body: "Pair desktop, mobile, and Pi clients under one identity. Commands route to the right machine, every time.",
+    chips: ["Secure pairing", "Remote execution", "QR onboarding"],
   },
   {
     id: "integrations",
-    title: "Integrations",
-    body: "Connect services like Google and Spotify through OAuth, and extend capability handlers as your workflow grows.",
+    label: "Integrations",
+    title: "Connected to\nyour workflow",
+    body: "OAuth-based connections to Google, Spotify, and more — extensible capability handlers as your needs evolve.",
+    chips: ["Google OAuth", "Spotify", "Custom handlers"],
   },
   {
     id: "settings",
-    title: "Settings",
-    body: "A calm control center for voice style, personality preferences, data controls, and account security.",
+    label: "Settings",
+    title: "Personal\nby design",
+    body: "Voice style, personality tuning, data controls, and account security — all in a calm, accessible panel.",
+    chips: ["Personality", "Privacy controls", "OAuth mgmt"],
   },
 ];
+
+// Stage height = 1 (hero) + 1 (morph) + sections.length (one per section) = 8 units of 100vh
+const STAGE_UNITS = 2 + sections.length;
 ---
 
-<BaseLayout title={site.name}>
-  <section class="relative overflow-hidden px-6 pb-20 pt-12 lg:pt-16">
-    <div class="glow-orb -left-28 top-10 h-80 w-80 bg-jarvis-accent/80" aria-hidden="true"></div>
-    <div class="glow-orb -right-16 top-28 h-96 w-96 bg-jarvis-glow/60" aria-hidden="true"></div>
-    <div class="mx-auto max-w-6xl">
-      <p class="text-center text-sm font-medium uppercase tracking-[0.2em] text-jarvis-accent">
-        Calm AI workspace
-      </p>
-      <h1 class="mx-auto mt-4 max-w-3xl text-center text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-        Your everyday assistant, designed to feel alive and focused
-      </h1>
-      <p class="mx-auto mt-5 max-w-2xl text-center text-lg text-jarvis-muted">
-        JARVIS blends conversation, automations, and memory inside a clean dark workspace with soft motion and zero visual clutter.
-      </p>
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
-        <a
-          href="#chat"
-          class="rounded-xl bg-jarvis-accent px-6 py-3 text-sm font-semibold text-white transition hover:bg-jarvis-accent-dim"
-        >
-          Enter workspace
-        </a>
-        <a
-          href="/privacy"
-          class="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-jarvis-fg transition hover:border-white/30 hover:bg-white/5"
-        >
-          Privacy first
-        </a>
+<BaseLayout title={site.name} heroHeader>
+  <!-- ─── SCROLL STAGE ─────────────────────────────────────────── -->
+  <div id="scroll-stage" style={`--stage-units: ${STAGE_UNITS}`}>
+    <div id="sticky-shell">
+
+      <!-- JARVIS 3D VISUAL (full → left panel) -->
+      <div id="visual-panel">
+        <iframe
+          id="jarvis-iframe"
+          src="/jarvis-visual.html"
+          title="JARVIS visual"
+          aria-hidden="true"
+          tabindex="-1"
+        ></iframe>
       </div>
-    </div>
-  </section>
 
-  <section id="chat" class="section-anchor px-6 pb-20">
-    <div class="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[220px_1fr]">
-      <aside class="glass-panel workspace-sidebar rounded-2xl p-4">
-        <p class="px-3 text-xs uppercase tracking-wider text-jarvis-muted">Workspace</p>
-        <nav class="mt-3 space-y-1.5">
-          {modules.map((module, idx) => (
-            <a
-              href={`#${module.id}`}
-              class:list={[
-                "block rounded-xl px-3 py-2.5 text-sm transition",
-                idx === 0
-                  ? "bg-white/10 text-white"
-                  : "text-jarvis-muted hover:bg-white/5 hover:text-white",
-              ]}
-            >
-              {module.title}
-            </a>
-          ))}
-        </nav>
-      </aside>
-
-      <article class="glass-panel rounded-3xl p-5 sm:p-7">
-        <div class="flex items-center justify-between border-b border-white/10 pb-4">
-          <div>
-            <p class="text-sm font-medium text-white">Conversation</p>
-            <p class="text-xs text-jarvis-muted">Natural language control with execution awareness</p>
-          </div>
-          <div class="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5">
-            <span class="voice-dot"></span>
-            <span class="text-xs text-jarvis-muted">Listening</span>
-          </div>
-        </div>
-
-        <div class="mt-6 space-y-4">
-          <div class="chat-row self-start rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-jarvis-muted">
-            Good evening. Ready to continue where you left off?
-          </div>
-          <div class="chat-row ml-auto max-w-[92%] rounded-2xl border border-jarvis-accent/30 bg-jarvis-accent/15 px-4 py-3 text-sm text-white">
-            Yes, open my DSA folder, launch VS Code, and pull pending Classroom assignments.
-          </div>
-          <div class="chat-row self-start rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-jarvis-muted">
-            Planned 3 actions. Executing now with Google Classroom scope and local workspace context.
-          </div>
-        </div>
-
-        <div class="mt-7 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-          <JarvisVisual listening />
-          <p class="border-t border-white/10 py-3 text-center text-xs uppercase tracking-widest text-jarvis-muted">
-            Voice channel active
-          </p>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  {modules.map((module) => (
-    <section id={module.id} class="section-anchor border-t border-white/5 px-6 py-16">
-      <div class="mx-auto max-w-6xl">
-        <div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-center">
-          <div>
-            <p class="text-xs uppercase tracking-widest text-jarvis-glow">Module</p>
-            <h2 class="mt-2 text-3xl font-semibold text-white">{module.title}</h2>
-            <p class="mt-4 max-w-2xl text-jarvis-muted">{module.body}</p>
-          </div>
-          <div class="glass-panel rounded-2xl p-5">
-            <p class="text-sm font-medium text-white">Workspace behavior</p>
-            <p class="mt-2 text-sm text-jarvis-muted">
-              This module is designed with intelligent spacing, quiet transitions, and contextual visibility so power features stay approachable.
-            </p>
-          </div>
-        </div>
+      <!-- HERO TEXT: left side -->
+      <div id="hero-left">
+        <p class="hl-eyebrow">Execution system</p>
+        <h1 class="hl-name">JARVIS</h1>
+        <p class="hl-tagline">{site.tagline}</p>
       </div>
-    </section>
-  ))}
 
-  <section class="section-anchor border-y border-white/5 bg-black/20 px-6 py-20">
-    <div class="mx-auto max-w-4xl text-center">
-      <h2 class="text-3xl font-semibold text-white">Advanced AI, everyday calm</h2>
-      <p class="mx-auto mt-4 max-w-2xl text-jarvis-muted">
-        JARVIS keeps the interface personal and productive, while legal and privacy controls remain transparent.
+      <!-- HERO TEXT: right side -->
+      <div id="hero-right">
+        <p class="hr-desc">{site.shortDescription}</p>
+        <p class="hr-hint">
+          <svg width="10" height="18" viewBox="0 0 10 18" fill="none" aria-hidden="true">
+            <path d="M5 1v16M1 12l4 4 4-4" stroke="currentColor" stroke-width="1.4"
+              stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Scroll to explore
+        </p>
+      </div>
+
+      <!-- DOT NAV (appears after morph) -->
+      <nav id="dot-nav" aria-label="Workspace sections">
+        {sections.map((s, i) => (
+          <button class="dot" data-idx={i} aria-label={s.label} title={s.label}></button>
+        ))}
+      </nav>
+
+      <!-- CONTENT PANEL (right half, appears after morph) -->
+      <div id="content-panel">
+        <div id="sec-indicator">
+          <span id="sec-num">01</span>
+          <span class="sep">/</span>
+          <span class="sec-total">{String(sections.length).padStart(2, "0")}</span>
+        </div>
+
+        {sections.map((s, i) => (
+          <div class="c-card" data-idx={i}>
+            <p class="c-label">{s.label}</p>
+            <h2 class="c-title">{s.title}</h2>
+            <p class="c-body">{s.body}</p>
+            <ul class="c-chips">
+              {s.chips.map((c) => <li>{c}</li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── TRUST / LEGAL (normal flow after stage) ─────────────── -->
+  <section id="trust-section">
+    <div class="ts-inner">
+      <img src="/favicon.svg" width="40" height="40" alt="" class="ts-logo" />
+      <h2 class="ts-title">Built on privacy and trust</h2>
+      <p class="ts-body">
+        Actions run only on devices you pair and commands you initiate. Your data is yours —
+        exportable, deletable, never sold.
       </p>
-      <div class="mt-8 flex flex-wrap justify-center gap-4 text-sm">
-        <a href="/privacy" class="rounded-xl border border-white/15 px-5 py-2.5 text-jarvis-fg hover:bg-white/5">
-          Privacy Policy
-        </a>
-        <a href="/terms" class="rounded-xl border border-white/15 px-5 py-2.5 text-jarvis-fg hover:bg-white/5">
-          Terms of Service
-        </a>
+      <div class="ts-links">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>
       </div>
     </div>
   </section>
 </BaseLayout>
+
+<style is:global>
+/* ── STAGE LAYOUT ────────────────────────────────────────────── */
+#scroll-stage {
+  height: calc(var(--stage-units, 8) * 100vh);
+  position: relative;
+}
+
+#sticky-shell {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: #050505;
+}
+
+/* ── VISUAL PANEL ────────────────────────────────────────────── */
+#visual-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  will-change: width;
+}
+
+#visual-panel iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+}
+
+/* ── HERO OVERLAYS ───────────────────────────────────────────── */
+#hero-left,
+#hero-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  pointer-events: none;
+  will-change: opacity, transform;
+}
+
+#hero-left  { left: 5%;  max-width: 260px; }
+#hero-right { right: 5%; max-width: 260px; text-align: right; }
+
+.hl-eyebrow {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-jarvis-accent);
+  margin-bottom: 0.75rem;
+}
+
+.hl-name {
+  font-size: clamp(3rem, 6vw, 5.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  line-height: 1;
+  margin: 0 0 0.6rem;
+}
+
+.hl-tagline {
+  font-size: clamp(0.8rem, 1.4vw, 1rem);
+  color: var(--color-jarvis-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.hr-desc {
+  font-size: clamp(0.8rem, 1.3vw, 0.9375rem);
+  color: var(--color-jarvis-muted);
+  line-height: 1.65;
+  margin: 0 0 1.5rem;
+}
+
+.hr-hint {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-jarvis-accent);
+  margin: 0;
+  animation: hint-bob 2.4s ease-in-out infinite;
+}
+
+@keyframes hint-bob {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(4px); }
+}
+
+/* ── CONTENT PANEL ───────────────────────────────────────────── */
+#content-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 52%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 5% 0 4%;
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+#sec-indicator {
+  position: absolute;
+  bottom: 2.5rem;
+  left: 4%;
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-jarvis-muted);
+}
+
+#sec-num {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-jarvis-accent);
+  transition: color 0.3s;
+}
+
+.sep { opacity: 0.35; }
+
+/* ── CONTENT CARDS ───────────────────────────────────────────── */
+.c-card {
+  position: absolute;
+  width: calc(100% - 9%);
+  opacity: 0;
+  transform: translateY(48px);
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.c-card[data-state="active"] {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.c-card[data-state="prev"] {
+  opacity: 0;
+  transform: translateY(-48px);
+}
+
+.c-card[data-state="next"] {
+  opacity: 0;
+  transform: translateY(48px);
+}
+
+.c-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-jarvis-accent);
+  margin: 0 0 0.75rem;
+}
+
+.c-title {
+  font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  line-height: 1.15;
+  margin: 0 0 1.2rem;
+  white-space: pre-line;
+}
+
+.c-body {
+  font-size: clamp(0.82rem, 1.3vw, 0.95rem);
+  color: var(--color-jarvis-muted);
+  line-height: 1.7;
+  margin: 0 0 1.75rem;
+  max-width: 44ch;
+}
+
+.c-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.c-chips li {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 122, 31, 0.3);
+  color: var(--color-jarvis-glow);
+  background: rgba(240, 122, 31, 0.06);
+}
+
+/* ── DOT NAV ─────────────────────────────────────────────────── */
+#dot-nav {
+  position: absolute;
+  right: 2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+  opacity: 0;
+  will-change: opacity;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(240, 122, 31, 0.35);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.3s, border-color 0.3s, transform 0.3s;
+  padding: 0;
+}
+
+.dot.active {
+  background: var(--color-jarvis-accent);
+  border-color: var(--color-jarvis-accent);
+  transform: scale(1.4);
+}
+
+/* ── HEADER: fixed overlay ───────────────────────────────────── */
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(5, 5, 5, 0.82);
+  backdrop-filter: blur(12px);
+  transition: background 0.35s, border-color 0.35s, backdrop-filter 0.35s;
+}
+
+.site-header.hero-mode {
+  background: transparent;
+  border-bottom-color: transparent;
+  backdrop-filter: none;
+}
+
+.site-header.hero-mode.scrolled {
+  background: rgba(5, 5, 5, 0.82);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+}
+
+.header-inner {
+  max-width: 1152px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.header-link {
+  color: var(--color-jarvis-muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.header-link:hover,
+.header-link.active { color: #fff; }
+
+.header-btn {
+  padding: 0.35rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-jarvis-muted);
+  text-decoration: none;
+  transition: border-color 0.2s, color 0.2s;
+}
+.header-btn:hover {
+  border-color: rgba(240, 122, 31, 0.5);
+  color: #fff;
+}
+
+/* ── TRUST FOOTER SECTION ────────────────────────────────────── */
+#trust-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 6rem 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: #020202;
+}
+
+.ts-inner {
+  max-width: 560px;
+  text-align: center;
+}
+
+.ts-logo {
+  margin-bottom: 1.5rem;
+  opacity: 0.7;
+}
+
+.ts-title {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  margin: 0 0 1rem;
+}
+
+.ts-body {
+  font-size: 0.9375rem;
+  color: var(--color-jarvis-muted);
+  line-height: 1.7;
+  margin: 0 0 2rem;
+}
+
+.ts-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.ts-links a {
+  font-size: 0.8rem;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-jarvis-muted);
+  text-decoration: none;
+  transition: color 0.2s, border-color 0.2s;
+}
+.ts-links a:hover {
+  color: #fff;
+  border-color: rgba(240, 122, 31, 0.4);
+}
+
+/* ── MOBILE FALLBACK ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #hero-left  { left: 4%; max-width: 180px; }
+  #hero-right { right: 4%; max-width: 180px; }
+  .hl-name    { font-size: 2.5rem; }
+  #content-panel { width: 100%; padding: 0 6% 0 6%; }
+  #visual-panel  { height: 42vh; }
+  #dot-nav       { display: none; }
+}
+</style>
+
+<script>
+(() => {
+  const stage    = document.getElementById("scroll-stage") as HTMLElement;
+  const vPanel   = document.getElementById("visual-panel") as HTMLElement;
+  const hLeft    = document.getElementById("hero-left") as HTMLElement;
+  const hRight   = document.getElementById("hero-right") as HTMLElement;
+  const cPanel   = document.getElementById("content-panel") as HTMLElement;
+  const dotNav   = document.getElementById("dot-nav") as HTMLElement;
+  const secNum   = document.getElementById("sec-num") as HTMLElement;
+  const iframe   = document.getElementById("jarvis-iframe") as HTMLIFrameElement;
+  const header   = document.getElementById("site-header") as HTMLElement;
+  const dots     = Array.from(dotNav.querySelectorAll<HTMLElement>(".dot"));
+  const cards    = Array.from(document.querySelectorAll<HTMLElement>(".c-card"));
+  const N        = cards.length;
+
+  // Scroll stage constants (must match STAGE_UNITS in frontmatter: 2 + N)
+  const MORPH_START    = 1.0; // scrollUnit at which morph begins
+  const SECTIONS_START = 2.0; // scrollUnit at which sections start
+  const STAGE_UNITS    = SECTIONS_START + N;
+
+  let currentSection  = -1;
+  let velTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastScrollY     = window.scrollY;
+  let isSpeaking      = false;
+
+  // ── Helpers ─────────────────────────────────────────────────────
+  const clamp   = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const eio     = (t: number) => t < 0.5 ? 2*t*t : -1+(4-2*t)*t; // ease-in-out
+  const lerp    = (a: number, b: number, t: number) => a + (b - a) * t;
+
+  function postMode(speaking: boolean) {
+    iframe?.contentWindow?.postMessage(
+      { type: "jarvis-visual-mode", payload: { speakModeOn: true, conversationHidden: true, isSpeaking: speaking } },
+      "*"
+    );
+  }
+
+  iframe?.addEventListener("load", () => postMode(false));
+
+  // ── Main update ─────────────────────────────────────────────────
+  function update() {
+    const stageTop    = stage.getBoundingClientRect().top + window.scrollY;
+    const maxScroll   = (STAGE_UNITS - 1) * window.innerHeight;
+    const scrollInto  = clamp(window.scrollY - stageTop, 0, maxScroll);
+    const scrollUnit  = scrollInto / window.innerHeight;
+
+    // Header: become solid after hero
+    header?.classList.toggle("scrolled", scrollUnit > 0.75);
+
+    // ── Morph factor 0 (full) → 1 (side panel) ──────────────────
+    const rawMorph = clamp((scrollUnit - MORPH_START) / 1.0, 0, 1);
+    const morphT   = eio(rawMorph);
+
+    // Visual panel shrinks from 100% → 48%
+    vPanel.style.width = lerp(100, 48, morphT) + "%";
+
+    // Hero text fades and slides apart
+    const heroAlpha = clamp(1 - morphT * 2.2, 0, 1);
+    const heroSlide = morphT * 60;
+    hLeft.style.opacity  = String(heroAlpha);
+    hLeft.style.transform  = `translateY(-50%) translateX(${-heroSlide}px)`;
+    hRight.style.opacity = String(heroAlpha);
+    hRight.style.transform = `translateY(-50%) translateX(${heroSlide}px)`;
+
+    // Content panel fades in
+    const contentAlpha = clamp((morphT - 0.35) / 0.65, 0, 1);
+    cPanel.style.opacity       = String(contentAlpha);
+    cPanel.style.pointerEvents = contentAlpha > 0.2 ? "auto" : "none";
+    dotNav.style.opacity       = String(contentAlpha);
+
+    // ── Section switching ────────────────────────────────────────
+    const secFloat  = scrollUnit - SECTIONS_START;
+    const rawIdx    = Math.floor(secFloat);
+    const newSection = clamp(rawIdx, 0, N - 1);
+
+    if (newSection !== currentSection) {
+      currentSection = newSection;
+
+      cards.forEach((card, i) => {
+        if (i === currentSection)     card.dataset.state = "active";
+        else if (i < currentSection) card.dataset.state = "prev";
+        else                          card.dataset.state = "next";
+      });
+
+      dots.forEach((d, i) => d.classList.toggle("active", i === currentSection));
+      if (secNum) secNum.textContent = String(currentSection + 1).padStart(2, "0");
+    }
+  }
+
+  // ── Scroll handler ───────────────────────────────────────────────
+  function onScroll() {
+    const vel = Math.abs(window.scrollY - lastScrollY);
+    lastScrollY = window.scrollY;
+
+    if (vel > 1 && !isSpeaking) {
+      isSpeaking = true;
+      postMode(true);
+    }
+    if (velTimer) clearTimeout(velTimer);
+    velTimer = setTimeout(() => {
+      isSpeaking = false;
+      postMode(false);
+    }, 450);
+
+    update();
+  }
+
+  window.addEventListener("scroll", onScroll, { passive: true });
+  update();
+
+  // ── Dot nav click ────────────────────────────────────────────────
+  dots.forEach((dot, i) => {
+    dot.addEventListener("click", () => {
+      const stageTop = stage.getBoundingClientRect().top + window.scrollY;
+      const target   = stageTop + (SECTIONS_START + i + 0.05) * window.innerHeight;
+      window.scrollTo({ top: target, behavior: "smooth" });
+    });
+  });
+
+  // Init first card state
+  cards[0]?.setAttribute("data-state", "active");
+  cards.slice(1).forEach(c => c.setAttribute("data-state", "next"));
+  dots[0]?.classList.add("active");
+})();
+</script>
