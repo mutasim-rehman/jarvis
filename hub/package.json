@@ -15,8 +15,10 @@
     "@astrojs/node": "^10.1.1",
     "@rive-app/canvas": "^2.37.8",
     "@tailwindcss/vite": "^4.3.0",
+    "@types/nodemailer": "^8.0.0",
     "astro": "^6.3.7",
     "googleapis": "^172.0.0",
+    "nodemailer": "^8.0.8",
     "tailwindcss": "^4.3.0"
   }
 }
