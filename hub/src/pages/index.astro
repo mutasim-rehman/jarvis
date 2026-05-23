@@ -77,6 +77,7 @@ const STAGE_UNITS = 2 + sections.length;
       <!-- HERO TEXT: right side -->
       <div id="hero-right">
         <p class="hr-desc">{site.shortDescription}</p>
+        <a href="/waitlist" class="hr-cta">Get early access →</a>
         <p class="hr-hint">
           <svg width="10" height="18" viewBox="0 0 10 18" fill="none" aria-hidden="true">
             <path d="M5 1v16M1 12l4 4 4-4" stroke="currentColor" stroke-width="1.4"
@@ -126,6 +127,7 @@ const STAGE_UNITS = 2 + sections.length;
         exportable, deletable, never sold.
       </p>
       <div class="ts-links">
+        <a href="/waitlist" class="ts-waitlist-btn">Join the waitlist</a>
         <a href="/privacy">Privacy Policy</a>
         <a href="/terms">Terms of Service</a>
         <a href={`mailto:${site.contactEmail}`}>{site.contactEmail}</a>
@@ -179,6 +181,10 @@ const STAGE_UNITS = 2 + sections.length;
   will-change: opacity, transform;
 }
 
+/* Allow clicks on interactive elements inside overlays */
+#hero-right a,
+#hero-left a { pointer-events: auto; }
+
 #hero-left  { left: 5%;  max-width: 260px; }
 #hero-right { right: 5%; max-width: 260px; text-align: right; }
 
@@ -211,7 +217,25 @@ const STAGE_UNITS = 2 + sections.length;
   font-size: clamp(0.8rem, 1.3vw, 0.9375rem);
   color: var(--color-jarvis-muted);
   line-height: 1.65;
-  margin: 0 0 1.5rem;
+  margin: 0 0 1rem;
+}
+
+.hr-cta {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  background: var(--color-jarvis-accent);
+  color: #fff;
+  text-decoration: none;
+  pointer-events: auto;
+  margin-bottom: 1.1rem;
+  transition: background 0.2s, transform 0.15s;
+}
+.hr-cta:hover {
+  background: var(--color-jarvis-accent-dim);
+  transform: translateY(-1px);
 }
 
 .hr-hint {
@@ -501,6 +525,13 @@ const STAGE_UNITS = 2 + sections.length;
 .ts-links a:hover {
   color: #fff;
   border-color: rgba(240, 122, 31, 0.4);
+}
+
+.ts-waitlist-btn {
+  background: var(--color-jarvis-accent) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  font-weight: 600;
 }
 
 /* ── MOBILE FALLBACK ─────────────────────────────────────────── */

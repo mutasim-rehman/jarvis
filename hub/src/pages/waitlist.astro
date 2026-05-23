@@ -1,0 +1,369 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../config/site";
+---
+
+<BaseLayout
+  title="Join the Waitlist"
+  description="Get early access to JARVIS — an AI execution system that understands, decides, and acts."
+>
+  <div class="wl-page">
+    <!-- ambient glow -->
+    <div class="wl-glow-a" aria-hidden="true"></div>
+    <div class="wl-glow-b" aria-hidden="true"></div>
+
+    <div class="wl-card">
+      <!-- ── FORM STATE ── -->
+      <div id="form-state">
+        <a href="/" class="wl-back-link">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Back
+        </a>
+
+        <img src="/favicon.svg" width="36" height="36" alt="" class="wl-logo" />
+        <p class="wl-eyebrow">Early access</p>
+        <h1 class="wl-title">Join the JARVIS waitlist</h1>
+        <p class="wl-desc">
+          Be among the first to use an AI that doesn't just answer questions —
+          it opens files, runs automations, and works across your devices.
+        </p>
+
+        <form id="waitlist-form" novalidate autocomplete="on">
+          <div class="wl-field">
+            <label for="wl-name">Full name</label>
+            <input
+              id="wl-name"
+              name="name"
+              type="text"
+              placeholder="Your name"
+              autocomplete="name"
+              required
+            />
+          </div>
+          <div class="wl-field">
+            <label for="wl-email">Email address</label>
+            <input
+              id="wl-email"
+              name="email"
+              type="email"
+              placeholder="you@example.com"
+              autocomplete="email"
+              required
+            />
+          </div>
+
+          <p id="form-error" class="wl-error" role="alert" aria-live="polite"></p>
+
+          <button type="submit" id="submit-btn" class="wl-submit">
+            <span id="btn-text">Request early access</span>
+            <span id="btn-spinner" class="btn-spinner" aria-hidden="true" hidden></span>
+          </button>
+        </form>
+
+        <p class="wl-fine">
+          No spam — ever. Read our <a href="/privacy">Privacy Policy</a>.
+        </p>
+      </div>
+
+      <!-- ── SUCCESS STATE ── -->
+      <div id="success-state" class="success-state" hidden>
+        <div class="success-ring" aria-hidden="true">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <path d="M6 16l7 7 13-13" stroke="#f07a1f" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h2 class="success-title">You're on the list</h2>
+        <p class="success-body">
+          We'll reach out when early access opens. In the meantime, explore what JARVIS can do.
+        </p>
+        <a href="/" class="wl-submit" style="display:inline-flex;text-decoration:none;">
+          Back to JARVIS →
+        </a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+.wl-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6rem 1.5rem 3rem;
+  position: relative;
+  overflow: hidden;
+  background: #030303;
+}
+
+.wl-glow-a {
+  position: absolute;
+  width: 500px; height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(240,122,31,0.14) 0%, transparent 70%);
+  top: -120px; left: -100px;
+  pointer-events: none;
+}
+.wl-glow-b {
+  position: absolute;
+  width: 400px; height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,179,107,0.08) 0%, transparent 70%);
+  bottom: -80px; right: -60px;
+  pointer-events: none;
+}
+
+.wl-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 460px;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.01) 50%),
+              rgba(8,8,8,0.7);
+  backdrop-filter: blur(18px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07),
+              0 24px 64px rgba(0,0,0,0.55),
+              0 0 0 1px rgba(240,122,31,0.08);
+  border-radius: 1.5rem;
+  padding: 2.5rem 2.25rem;
+}
+
+.wl-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--color-jarvis-muted);
+  text-decoration: none;
+  margin-bottom: 1.75rem;
+  transition: color 0.2s;
+}
+.wl-back-link:hover { color: #fff; }
+
+.wl-logo {
+  display: block;
+  margin-bottom: 1.25rem;
+  opacity: 0.85;
+}
+
+.wl-eyebrow {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-jarvis-accent);
+  margin: 0 0 0.6rem;
+}
+
+.wl-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  margin: 0 0 0.85rem;
+  line-height: 1.2;
+}
+
+.wl-desc {
+  font-size: 0.9rem;
+  color: var(--color-jarvis-muted);
+  line-height: 1.65;
+  margin: 0 0 1.75rem;
+}
+
+/* Fields */
+.wl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.wl-field label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--color-jarvis-muted);
+}
+
+.wl-field input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.wl-field input::placeholder { color: rgba(255,255,255,0.25); }
+
+.wl-field input:focus {
+  border-color: rgba(240,122,31,0.55);
+  box-shadow: 0 0 0 3px rgba(240,122,31,0.12);
+  background: rgba(255,255,255,0.06);
+}
+
+/* Error */
+.wl-error {
+  font-size: 0.8rem;
+  color: #ff7b5e;
+  min-height: 1.2rem;
+  margin: -0.25rem 0 0.75rem;
+}
+
+/* Submit */
+.wl-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 0.875rem;
+  background: var(--color-jarvis-accent);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s, transform 0.15s;
+  margin-top: 0.5rem;
+}
+.wl-submit:hover:not(:disabled) {
+  background: var(--color-jarvis-accent-dim);
+  transform: translateY(-1px);
+}
+.wl-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Spinner */
+.btn-spinner {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Fine print */
+.wl-fine {
+  font-size: 0.72rem;
+  color: rgba(179,155,134,0.65);
+  text-align: center;
+  margin: 1rem 0 0;
+}
+.wl-fine a {
+  color: var(--color-jarvis-glow);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Success */
+.success-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.success-ring {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(240,122,31,0.35);
+  background: rgba(240,122,31,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.success-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  margin: 0 0 0.75rem;
+}
+
+.success-body {
+  font-size: 0.9rem;
+  color: var(--color-jarvis-muted);
+  line-height: 1.65;
+  margin: 0 0 1.75rem;
+  max-width: 32ch;
+}
+</style>
+
+<script>
+  (() => {
+    const form       = document.getElementById("waitlist-form") as HTMLFormElement | null;
+    const errorEl    = document.getElementById("form-error") as HTMLElement;
+    const btnText    = document.getElementById("btn-text") as HTMLElement;
+    const btnSpinner = document.getElementById("btn-spinner") as HTMLElement;
+    const submitBtn  = document.getElementById("submit-btn") as HTMLButtonElement;
+    const formState  = document.getElementById("form-state") as HTMLElement;
+    const successState = document.getElementById("success-state") as HTMLElement;
+
+    if (!form) return;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.textContent = "";
+
+      const name  = ((form.elements.namedItem("name")  as HTMLInputElement).value ?? "").trim();
+      const email = ((form.elements.namedItem("email") as HTMLInputElement).value ?? "").trim();
+
+      if (!name)  { errorEl.textContent = "Please enter your name."; return; }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errorEl.textContent = "Please enter a valid email address."; return;
+      }
+
+      // Loading
+      submitBtn.disabled  = true;
+      btnText.hidden      = true;
+      btnSpinner.hidden   = false;
+
+      try {
+        const res  = await fetch("/api/waitlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email }),
+        });
+        const data = await res.json() as { success?: boolean; error?: string };
+
+        if (!res.ok || !data.success) {
+          errorEl.textContent = data.error ?? "Something went wrong. Please try again.";
+          submitBtn.disabled = false;
+          btnText.hidden     = false;
+          btnSpinner.hidden  = true;
+          return;
+        }
+
+        // Show success
+        formState.hidden    = true;
+        successState.hidden = false;
+      } catch {
+        errorEl.textContent = "Network error — please check your connection.";
+        submitBtn.disabled = false;
+        btnText.hidden     = false;
+        btnSpinner.hidden  = true;
+      }
+    });
+  })();
+</script>
