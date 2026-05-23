@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import JarvisVisual from "../components/JarvisVisual.astro";
 import { site } from "../config/site";
 
 const modules = [
@@ -112,16 +113,11 @@ const modules = [
           </div>
         </div>
 
-        <div class="mt-7 rounded-2xl border border-white/10 bg-black/20 p-5">
-          <div class="voice-orb-wrap">
-            <div class="voice-orb" aria-hidden="true"></div>
-            <div class="wave-bars" aria-hidden="true">
-              <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
-            </div>
-            <p class="mt-4 text-center text-xs uppercase tracking-widest text-jarvis-muted">
-              Voice channel active
-            </p>
-          </div>
+        <div class="mt-7 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+          <JarvisVisual listening />
+          <p class="border-t border-white/10 py-3 text-center text-xs uppercase tracking-widest text-jarvis-muted">
+            Voice channel active
+          </p>
         </div>
       </article>
     </div>

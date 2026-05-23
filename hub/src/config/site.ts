@@ -8,7 +8,7 @@ export const site = {
     "Distributed AI assistant for voice, intent planning, and safe desktop execution.",
   /** Used in legal pages and OAuth console; override with PUBLIC_CONTACT_EMAIL at build time if needed. */
   contactEmail:
-    import.meta.env.PUBLIC_CONTACT_EMAIL ?? "support@jarvis.app",
+    import.meta.env.PUBLIC_CONTACT_EMAIL ?? "jarvis.mutasim@gmail.com",
   githubUrl: import.meta.env.PUBLIC_GITHUB_URL ?? "",
   docsUrl: import.meta.env.PUBLIC_DOCS_URL ?? "",
 } as const;

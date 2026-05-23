@@ -1,0 +1,42 @@
+---
+interface Props {
+  /** When true, boosts motion like desktop speak/listen mode. */
+  listening?: boolean;
+  class?: string;
+}
+
+const { listening = true, class: className = "" } = Astro.props;
+const frameId = `jarvis-visual-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+<div class:list={["jarvis-visual-wrap", className]}>
+  <iframe
+    id={frameId}
+    class="jarvis-visual-frame"
+    src="/jarvis-visual.html"
+    title="JARVIS visual body"
+    aria-hidden="true"
+    tabindex={-1}
+  ></iframe>
+</div>
+
+<script define:vars={{ frameId, listening }}>
+  function postVisualMode() {
+    const frame = document.getElementById(frameId);
+    frame?.contentWindow?.postMessage(
+      {
+        type: "jarvis-visual-mode",
+        payload: {
+          speakModeOn: true,
+          conversationHidden: true,
+          isSpeaking: listening,
+        },
+      },
+      "*",
+    );
+  }
+
+  const frame = document.getElementById(frameId);
+  frame?.addEventListener("load", postVisualMode);
+  postVisualMode();
+</script>

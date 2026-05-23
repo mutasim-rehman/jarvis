@@ -64,4 +64,12 @@ Update `src/config/site.ts` or env vars (`PUBLIC_CONTACT_EMAIL`, `PUBLIC_GITHUB_
 
 - [Astro](https://astro.build/) 6.x
 - [Tailwind CSS](https://tailwindcss.com/) 4.x
-- Styling aligned with `controller/desktop/` (dark theme, `#863bff` accent)
+- Styling aligned with `controller/desktop/` (black + orange theme)
+- 3D visual: `public/jarvis-visual.html` (same as `controller/desktop/src/jarvisCoreVisualHtml.ts`)
+
+To refresh the visual after desktop changes:
+
+```bash
+cd hub
+npx tsx -e "import { jarvisCoreVisualHtml } from './src/lib/jarvisCoreVisualHtml.ts'; import fs from 'fs'; fs.writeFileSync('public/jarvis-visual.html', jarvisCoreVisualHtml);"
+```
