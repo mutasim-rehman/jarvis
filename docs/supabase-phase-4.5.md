@@ -31,7 +31,8 @@
 
 Add to **Authentication → URL configuration** in Supabase:
 
-- Desktop dev: `http://127.0.0.1:5173/auth/callback`
+- Desktop Electron (system browser): `http://127.0.0.1:52847/auth/callback`
+- Desktop Vite-only dev: `http://127.0.0.1:5173/auth/callback`
 - Hub production: `https://<your-domain>/auth/callback`
 - Hub local: `http://localhost:4321/auth/callback`
 
@@ -89,3 +90,7 @@ On `auth.users` insert, create `profiles` and `preferences` rows (see Phase 4.5 
 - `POST|GET /tasks`
 
 Send `Authorization: Bearer <supabase_access_token>` and optional `X-Device-Id`.
+
+## HTML email templates
+
+Black/orange branded templates for Supabase Auth emails: [supabase/email-templates/README.md](supabase/email-templates/README.md). Paste each HTML file into **Authentication → Email Templates** in the dashboard.

@@ -65,6 +65,7 @@ export function OnboardingWizard() {
 
   return (
     <main className="onboarding-screen">
+      <div className="auth-card" style={{ width: "100%", maxWidth: "520px" }}>
       <h1>Welcome to JARVIS</h1>
       {step === 0 ? (
         <section>
@@ -141,6 +142,7 @@ export function OnboardingWizard() {
       ) : null}
 
       {error ? <p className="onboarding-error">{error}</p> : null}
+      </div>
     </main>
   );
 }

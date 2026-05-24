@@ -3,7 +3,56 @@ const fs = require("node:fs/promises");
 const net = require("node:net");
 const { spawn, execSync } = require("node:child_process");
 const os = require("node:os");
-const { app, BrowserWindow, ipcMain } = require("electron");
+const http = require("node:http");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
+
+const OAUTH_CALLBACK_PORT = 52847;
+/** @type {import("node:http").Server | null} */
+let oauthCallbackServer = null;
+/** @type {NodeJS.Timeout | null} */
+let oauthCallbackTimeout = null;
+
+function stopOAuthCallbackServer() {
+  if (oauthCallbackTimeout) {
+    clearTimeout(oauthCallbackTimeout);
+    oauthCallbackTimeout = null;
+  }
+  if (oauthCallbackServer) {
+    oauthCallbackServer.close();
+    oauthCallbackServer = null;
+  }
+}
+
+function startOAuthCallbackServer() {
+  stopOAuthCallbackServer();
+  return new Promise((resolve, reject) => {
+    oauthCallbackServer = http.createServer((req, res) => {
+      if (!req.url || !req.url.startsWith("/auth/callback")) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      const fullUrl = `http://127.0.0.1:${OAUTH_CALLBACK_PORT}${req.url}`;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("auth:oauth-callback", fullUrl);
+      }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<!DOCTYPE html><html><body style="font-family:sans-serif;background:#090c14;color:#eef3ff;text-align:center;padding:48px">
+<h1>Signed in to JARVIS</h1>
+<p>You can close this tab and return to the desktop app.</p>
+</body></html>`);
+      stopOAuthCallbackServer();
+    });
+    oauthCallbackServer.on("error", (err) => {
+      stopOAuthCallbackServer();
+      reject(err);
+    });
+    oauthCallbackServer.listen(OAUTH_CALLBACK_PORT, "127.0.0.1", () => {
+      oauthCallbackTimeout = setTimeout(() => stopOAuthCallbackServer(), 5 * 60 * 1000);
+      resolve({ port: OAUTH_CALLBACK_PORT });
+    });
+  });
+}
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
 const cursorProjectsDir = path.join(os.homedir(), ".cursor", "projects");
@@ -747,6 +796,24 @@ ipcMain.handle("services:base-url", async (_event, serviceId) => getServiceBaseU
 ipcMain.handle("auth:set-session", async (_event, accessToken, deviceId) => {
   authAccessToken = accessToken || null;
   authDeviceId = deviceId || null;
+  return { ok: true };
+});
+
+ipcMain.handle("auth:start-oauth-listener", async () => {
+  try {
+    const result = await startOAuthCallbackServer();
+    return { ok: true, ...result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "OAuth listener failed";
+    return { ok: false, error: message };
+  }
+});
+
+ipcMain.handle("auth:open-external-url", async (_event, url) => {
+  if (!url || typeof url !== "string") {
+    return { ok: false, error: "Missing URL" };
+  }
+  await shell.openExternal(url);
   return { ok: true };
 });
 

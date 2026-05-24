@@ -10,6 +10,15 @@ contextBridge.exposeInMainWorld("desktopApi", {
   getServiceBaseUrl: (serviceId) => ipcRenderer.invoke("services:base-url", serviceId),
   setAuthSession: (accessToken, deviceId) =>
     ipcRenderer.invoke("auth:set-session", accessToken, deviceId),
+  startOAuthListener: () => ipcRenderer.invoke("auth:start-oauth-listener"),
+  openExternalUrl: (url) => ipcRenderer.invoke("auth:open-external-url", url),
+  onOAuthCallback: (callback) => {
+    const listener = (_event, callbackUrl) => callback(callbackUrl);
+    ipcRenderer.on("auth:oauth-callback", listener);
+    return () => {
+      ipcRenderer.removeListener("auth:oauth-callback", listener);
+    };
+  },
   interactWithBackend: (text, baseUrl, chatProvider, accessToken) =>
     ipcRenderer.invoke("backend:interact", text, baseUrl, chatProvider, accessToken),
   transcribeAudio: (wavBytes, baseUrl) => ipcRenderer.invoke("backend:transcribe", wavBytes, baseUrl),

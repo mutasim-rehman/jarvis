@@ -16,7 +16,7 @@
     "start": "npm run dev"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1",
+    "@supabase/supabase-js": "^2.106.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },

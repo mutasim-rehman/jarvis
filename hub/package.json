@@ -12,9 +12,9 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1",
     "@astrojs/vercel": "^10.0.7",
     "@rive-app/canvas": "^2.37.8",
+    "@supabase/supabase-js": "^2.106.1",
     "@tailwindcss/vite": "^4.3.0",
     "@types/nodemailer": "^8.0.0",
     "astro": "^6.3.7",

@@ -82,6 +82,9 @@ interface DesktopApi {
     accessToken: string | null,
     deviceId: string | null,
   ) => Promise<{ ok: true }>;
+  startOAuthListener: () => Promise<{ ok: true; port?: number } | { ok: false; error: string }>;
+  openExternalUrl: (url: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onOAuthCallback: (callback: (callbackUrl: string) => void) => () => void;
   interactWithBackend: (
     text: string,
     baseUrl: string,

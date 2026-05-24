@@ -24,6 +24,17 @@ body {
   min-height: 100vh;
 }
 
+:root {
+  --jarvis-auth-bg: #050505;
+  --jarvis-auth-surface: #0d0d0d;
+  --jarvis-auth-border: #2a1a10;
+  --jarvis-auth-orange: #f07a1f;
+  --jarvis-auth-orange-dim: #c85e0d;
+  --jarvis-auth-orange-glow: rgba(240, 122, 31, 0.35);
+  --jarvis-auth-text: #f7efe8;
+  --jarvis-auth-muted: #b39b86;
+}
+
 .auth-screen,
 .onboarding-screen {
   min-height: 100vh;
@@ -31,10 +42,55 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
   padding: 2rem;
-  max-width: 520px;
-  margin: 0 auto;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, var(--jarvis-auth-orange-glow), transparent 55%),
+    var(--jarvis-auth-bg);
+  color: var(--jarvis-auth-text);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 2rem 1.75rem;
+  border-radius: 16px;
+  border: 1px solid var(--jarvis-auth-border);
+  background: linear-gradient(165deg, #141414 0%, var(--jarvis-auth-surface) 45%, #0a0a0a 100%);
+  box-shadow: 0 0 0 1px rgba(240, 122, 31, 0.08), 0 24px 48px rgba(0, 0, 0, 0.55);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.auth-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--jarvis-auth-orange), var(--jarvis-auth-orange-dim));
+  color: #050505;
+  font-weight: 800;
+  font-size: 1.15rem;
+}
+
+.auth-screen h1,
+.onboarding-screen h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.auth-subtitle {
+  margin: 0 0 1.5rem;
+  color: var(--jarvis-auth-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
 }
 
 .auth-actions {
@@ -44,14 +100,90 @@ body {
   width: 100%;
 }
 
-.auth-actions button,
-.onboarding-screen button {
-  padding: 0.65rem 1rem;
-  border-radius: 8px;
-  border: 1px solid #3a4f7a;
-  background: #1a2540;
-  color: #eef3ff;
+.auth-oauth-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+}
+
+.auth-oauth-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.auth-oauth-google {
+  border: 1px solid #3d3d3d;
+  background: #f7efe8;
+  color: #1a1a1a;
+}
+
+.auth-oauth-google:hover:not(:disabled) {
+  border-color: var(--jarvis-auth-orange);
+  box-shadow: 0 0 0 2px var(--jarvis-auth-orange-glow);
+}
+
+.auth-oauth-github {
+  border: 1px solid var(--jarvis-auth-border);
+  background: #111;
+  color: #f7efe8;
+}
+
+.auth-oauth-github:hover:not(:disabled) {
+  border-color: var(--jarvis-auth-orange);
+  background: #1a120c;
+}
+
+.auth-error,
+.onboarding-error {
+  margin: 1rem 0 0;
+  color: #ff9b6a;
+  font-size: 0.88rem;
+}
+
+.onboarding-screen {
+  max-width: 520px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.onboarding-screen h2 {
+  color: var(--jarvis-auth-orange);
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+}
+
+.onboarding-screen button {
+  padding: 0.65rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--jarvis-auth-orange-dim);
+  background: linear-gradient(180deg, var(--jarvis-auth-orange), var(--jarvis-auth-orange-dim));
+  color: #050505;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.onboarding-screen button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.onboarding-screen textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--jarvis-auth-border);
+  background: #0a0a0a;
+  color: var(--jarvis-auth-text);
+  padding: 0.65rem;
 }
 
 .onboarding-slider {
@@ -59,14 +191,10 @@ body {
   flex-direction: column;
   gap: 0.25rem;
   width: 100%;
+  color: var(--jarvis-auth-muted);
+  margin-bottom: 0.5rem;
 }
 
-.onboarding-screen textarea {
-  width: 100%;
-  font-family: ui-monospace, monospace;
-  font-size: 0.85rem;
-}
-
-.onboarding-error {
-  color: #ff8a8a;
+.onboarding-slider input[type="range"] {
+  accent-color: var(--jarvis-auth-orange);
 }

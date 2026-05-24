@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
-import { signInWithGitHub, signInWithGoogle } from "./supabaseClient";
 import { useAuth } from "./AuthProvider";
 import { OnboardingWizard } from "../onboarding/OnboardingWizard";
+import { SignInScreen } from "./SignInScreen";
 
 type AuthGateProps = {
   children: ReactNode;
@@ -17,26 +17,15 @@ export function AuthGate({ children }: AuthGateProps) {
   if (loading) {
     return (
       <main className="auth-screen">
-        <p>Loading account…</p>
+        <div className="auth-card">
+          <p className="auth-subtitle">Loading account…</p>
+        </div>
       </main>
     );
   }
 
   if (!session) {
-    return (
-      <main className="auth-screen">
-        <h1>Sign in to JARVIS</h1>
-        <p>Use the same account on desktop, hub, and mobile.</p>
-        <div className="auth-actions">
-          <button type="button" onClick={() => void signInWithGoogle()}>
-            Continue with Google
-          </button>
-          <button type="button" onClick={() => void signInWithGitHub()}>
-            Continue with GitHub
-          </button>
-        </div>
-      </main>
-    );
+    return <SignInScreen />;
   }
 
   if (!onboardingCompleted) {

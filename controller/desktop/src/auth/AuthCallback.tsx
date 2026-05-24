@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getSupabase } from "./supabaseClient";
+import { completeOAuthFromUrl, getSupabase } from "./supabaseClient";
 
 export function AuthCallback() {
   const [message, setMessage] = useState("Completing sign-in…");
@@ -10,8 +10,7 @@ export function AuthCallback() {
       setMessage("Supabase is not configured.");
       return;
     }
-    supabase.auth
-      .getSession()
+    void completeOAuthFromUrl(supabase, window.location.href)
       .then(() => {
         window.location.replace("/");
       })
@@ -22,7 +21,9 @@ export function AuthCallback() {
 
   return (
     <main className="auth-screen">
-      <p>{message}</p>
+      <div className="auth-card">
+        <p className="auth-subtitle">{message}</p>
+      </div>
     </main>
   );
 }
