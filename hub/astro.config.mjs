@@ -1,7 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
-import node from '@astrojs/node';
+import vercel from '@astrojs/vercel';
 
 /** Set PUBLIC_SITE_URL when building for production (Google OAuth, canonical URLs). */
 const site =
@@ -9,9 +9,9 @@ const site =
 
 export default defineConfig({
   site,
-  // Static by default; routes with `export const prerender = false` run server-side via the Node adapter.
+  // Static pages by default; `/api/waitlist` uses `prerender = false` → Vercel serverless.
   output: 'static',
-  adapter: node({ mode: 'standalone' }),
+  adapter: vercel(),
   vite: {
     plugins: [tailwindcss()],
   },

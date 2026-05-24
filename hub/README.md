@@ -37,13 +37,21 @@ Output is in `hub/dist/`. Preview locally:
 npm run preview
 ```
 
-## Deploy
+## Deploy (Vercel)
 
-Deploy `dist/` to any static host:
+| Setting | Value |
+|---------|--------|
+| Root Directory | `hub` |
+| Install Command | `npm install` |
+| Build Command | `npm run build` |
+| Output Directory | *(leave empty — Vercel uses Astro preset + `@astrojs/vercel`)* |
+| Node.js Version | **22.x** |
 
-- **Cloudflare Pages** — build command: `npm run build`, output: `dist`, root: `hub`
-- **Vercel** — same; set `PUBLIC_SITE_URL` in project env
-- **GitHub Pages** — use `astro build` with `site` set to `https://<user>.github.io/<repo>/` if serving from a subpath
+Set env vars in the Vercel project (Production + Preview): `PUBLIC_SITE_URL`, `Google_Service_Account_JSON`, `WATLIST_SHEET_ID`, `SMTP_*`, etc. See `.env.example`.
+
+The waitlist API (`/api/waitlist`) requires `@astrojs/vercel` (not `@astrojs/node`).
+
+Other hosts: build with `npm run build`; static assets are in `dist/`.
 
 ## Google Cloud OAuth console
 

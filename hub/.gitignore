@@ -1,7 +1,12 @@
 # build output
 dist/
+.vercel/
+
 # generated types
 .astro/
+
+# vite cache (when present outside node_modules)
+.vite/
 
 # dependencies
 node_modules/
