@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 
@@ -45,8 +46,10 @@ from backend.app.db.repositories import (
     update_profile,
 )
 from backend.app.db.session import get_db
+from backend.app.email.welcome import maybe_send_welcome_email
 
 router = APIRouter(tags=["accounts"])
+logger = logging.getLogger(__name__)
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -140,7 +143,27 @@ def patch_preferences(
     user: AuthUser = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    settings = patch_preference_settings(db, user.user_id, body.to_settings_patch())
+    profile, pref = ensure_profile_and_preferences(db, user.user_id)
+    old_settings = PreferenceSettingsV1.model_validate(pref.settings or {})
+    patch = body.to_settings_patch()
+    settings = patch_preference_settings(db, user.user_id, patch)
+
+    completing_onboarding = (
+        body.onboarding_completed is True
+        and not old_settings.onboarding_completed
+        and not old_settings.welcome_email_sent
+    )
+    if completing_onboarding and user.email:
+        try:
+            if maybe_send_welcome_email(to_email=user.email, display_name=profile.display_name):
+                settings = patch_preference_settings(
+                    db,
+                    user.user_id,
+                    {"welcome_email_sent": True},
+                )
+        except Exception:
+            logger.exception("Welcome email failed for user_id=%s", user.user_id)
+
     _, pref = ensure_profile_and_preferences(db, user.user_id)
     return PreferencesResponse(
         user_id=user.user_id,

@@ -112,6 +112,7 @@ class PreferenceSettingsV1(BaseModel):
     integrations: IntegrationConsentsV1 = Field(default_factory=IntegrationConsentsV1)
     personality_profile_v1: PersonalityProfileV1 | None = None
     devices: list[RegisteredDeviceV1] = Field(default_factory=list)
+    welcome_email_sent: bool = False
 
     @field_validator("version")
     @classmethod

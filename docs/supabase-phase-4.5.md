@@ -94,3 +94,5 @@ Send `Authorization: Bearer <supabase_access_token>` and optional `X-Device-Id`.
 ## HTML email templates
 
 Black/orange branded templates for Supabase Auth emails: [supabase/email-templates/README.md](supabase/email-templates/README.md). Paste each HTML file into **Authentication → Email Templates** in the dashboard.
+
+**Welcome email (post-onboarding):** configure `SMTP_*` in root `.env`. When the user finishes onboarding on desktop or hub, the backend sends `Welcome to JARVIS` once (see README in `email-templates/`).

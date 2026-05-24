@@ -64,6 +64,21 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("DATABASE_URL", "database_url"),
     )
 
+    # Welcome / transactional email (same SMTP_* as executor)
+    smtp_host: str = Field(default="smtp.gmail.com", validation_alias=AliasChoices("SMTP_HOST", "smtp_host"))
+    smtp_port: int = Field(default=587, validation_alias=AliasChoices("SMTP_PORT", "smtp_port"))
+    smtp_secure: bool = Field(default=True, validation_alias=AliasChoices("SMTP_SECURE", "smtp_secure"))
+    smtp_user: str = Field(default="", validation_alias=AliasChoices("SMTP_USER", "smtp_user"))
+    smtp_pass: str = Field(
+        default="",
+        validation_alias=AliasChoices("SMTP_PASS", "SMTP_PASSWORD", "smtp_pass"),
+    )
+    smtp_from: str = Field(default="", validation_alias=AliasChoices("SMTP_FROM", "smtp_from"))
+    smtp_app_name: str = Field(
+        default="JARVIS",
+        validation_alias=AliasChoices("SMTP_APP_NAME", "smtp_app_name"),
+    )
+
     # Phase 3: Integration with executor
     executor_base_url: str = "http://127.0.0.1:8001"
     executor_api_key: str = ""
@@ -106,6 +121,12 @@ class Settings(BaseSettings):
         if url.endswith("/rest/v1"):
             url = url[: -len("/rest/v1")]
         return url
+
+    def resolved_smtp_user(self) -> str:
+        return (self.smtp_user or "").strip()
+
+    def resolved_smtp_pass(self) -> str:
+        return (self.smtp_pass or "").strip()
 
     def resolved_database_url(self) -> str:
         url = (self.database_url or "").strip()
