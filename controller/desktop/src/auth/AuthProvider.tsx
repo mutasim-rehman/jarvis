@@ -13,7 +13,13 @@ import {
   isSupabaseConfigured,
   registerDevice,
   type AuthMeResponse,
+  type PreferenceSettings,
 } from "../lib/backendApi";
+import {
+  ensureBackendRunning,
+  formatBackendError,
+  resolveBackendBaseUrl,
+} from "../lib/backendReady";
 import { getSupabase } from "./supabaseClient";
 
 type AuthContextValue = {
@@ -23,15 +29,14 @@ type AuthContextValue = {
   me: AuthMeResponse | null;
   backendAuthError: string | null;
   onboardingCompleted: boolean;
-  refreshMe: (baseUrl: string) => Promise<void>;
+  refreshMe: (baseUrl?: string) => Promise<void>;
+  markOnboardingComplete: (settings?: Partial<PreferenceSettings>) => void;
   resolveAccessToken: () => Promise<string | null>;
   signOut: () => Promise<void>;
   supabaseEnabled: boolean;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-const defaultBackend = "http://127.0.0.1:8000";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(isSupabaseConfigured());
@@ -57,27 +62,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   }, []);
 
-  const refreshMe = useCallback(async (baseUrl: string = defaultBackend) => {
+  const markOnboardingComplete = useCallback((settings?: Partial<PreferenceSettings>) => {
+    setMe((prev) => {
+      const baseSettings: PreferenceSettings = prev?.settings ?? {
+        version: 1,
+        onboarding_completed: false,
+        sliders: {
+          honesty: 0.7,
+          humor: 0.4,
+          formality: 0.6,
+          verbosity: 0.5,
+          proactivity: 0.5,
+        },
+      };
+      const nextSettings: PreferenceSettings = {
+        ...baseSettings,
+        ...settings,
+        onboarding_completed: true,
+      };
+      return {
+        user_id: prev?.user_id ?? session?.user.id ?? "",
+        email: prev?.email ?? session?.user.email ?? null,
+        settings: nextSettings,
+        onboarding_completed: true,
+      };
+    });
+    setBackendAuthError(null);
+  }, [session?.user.email, session?.user.id]);
+
+  const refreshMe = useCallback(async (baseUrl?: string) => {
     const token = await resolveAccessToken();
     if (!token) {
       setMe(null);
       setBackendAuthError(null);
       return;
     }
+    let resolvedBase = baseUrl ?? (await resolveBackendBaseUrl());
     try {
-      const data = await fetchAuthMe(baseUrl, token);
+      resolvedBase = await ensureBackendRunning();
+      const data = await fetchAuthMe(resolvedBase, token);
       setMe(data);
       setBackendAuthError(null);
       try {
-        await registerDevice(baseUrl, token);
+        await registerDevice(resolvedBase, token);
       } catch {
         // non-fatal
       }
     } catch (err) {
       setMe(null);
-      setBackendAuthError(
-        err instanceof Error ? err.message : "Could not verify account with the backend",
-      );
+      setBackendAuthError(formatBackendError(err, resolvedBase));
     }
   }, [resolveAccessToken]);
 
@@ -137,11 +170,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       backendAuthError,
       onboardingCompleted: me?.onboarding_completed ?? false,
       refreshMe,
+      markOnboardingComplete,
       resolveAccessToken,
       signOut: signOutUser,
       supabaseEnabled: isSupabaseConfigured(),
     }),
-    [loading, session, me, backendAuthError, refreshMe, resolveAccessToken, signOutUser],
+    [
+      loading,
+      session,
+      me,
+      backendAuthError,
+      refreshMe,
+      markOnboardingComplete,
+      resolveAccessToken,
+      signOutUser,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

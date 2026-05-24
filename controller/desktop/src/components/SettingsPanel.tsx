@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { VoiceprintStatus } from "../desktop-api";
 import { useAuth } from "../auth/AuthProvider";
 import { deleteAccount } from "../lib/backendApi";
+import { ensureBackendRunning, formatBackendError, resolveBackendBaseUrl } from "../lib/backendReady";
 import { ConfirmModal } from "./ConfirmModal";
 
 type VoiceprintEnrollState = {
@@ -29,8 +30,6 @@ type SettingsPanelProps = {
   onClose: () => void;
 };
 
-const defaultBackend = "http://127.0.0.1:8000";
-
 export function SettingsPanel({
   voiceprintStatus,
   voiceprintEnabled,
@@ -55,17 +54,19 @@ export function SettingsPanel({
   const handleDeleteAccount = async () => {
     setAccountBusy(true);
     setAccountError(null);
+    let baseUrl = await resolveBackendBaseUrl();
     try {
       const token = await resolveAccessToken();
       if (!token) {
         throw new Error("Not signed in.");
       }
-      await deleteAccount(defaultBackend, token);
+      baseUrl = await ensureBackendRunning();
+      await deleteAccount(baseUrl, token);
       await signOut();
       setDeleteConfirmOpen(false);
       onClose();
     } catch (err) {
-      setAccountError(err instanceof Error ? err.message : "Could not delete account");
+      setAccountError(formatBackendError(err, baseUrl));
       setDeleteConfirmOpen(false);
     } finally {
       setAccountBusy(false);

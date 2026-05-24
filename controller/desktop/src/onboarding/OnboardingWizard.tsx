@@ -5,8 +5,11 @@ import {
   type PreferenceSliders,
 } from "../lib/backendApi";
 import { useAuth } from "../auth/AuthProvider";
-
-const defaultBackend = "http://127.0.0.1:8000";
+import {
+  ensureBackendRunning,
+  formatBackendError,
+  resolveBackendBaseUrl,
+} from "../lib/backendReady";
 
 const defaultSliders: PreferenceSliders = {
   honesty: 0.7,
@@ -31,7 +34,7 @@ const SLIDER_LABELS: Record<keyof PreferenceSliders, string> = {
 };
 
 export function OnboardingWizard() {
-  const { refreshMe, resolveAccessToken, backendAuthError } = useAuth();
+  const { refreshMe, markOnboardingComplete, resolveAccessToken, backendAuthError } = useAuth();
   const [step, setStep] = useState(0);
   const [sliders, setSliders] = useState<PreferenceSliders>(defaultSliders);
   const [personalityJson, setPersonalityJson] = useState("");
@@ -43,23 +46,33 @@ export function OnboardingWizard() {
   const finish = async (skipPersonality: boolean) => {
     setBusy(true);
     setError(null);
+    let baseUrl = await resolveBackendBaseUrl();
     try {
       const token = await resolveAccessToken();
       if (!token) {
         throw new Error("Not signed in. Please sign in again.");
       }
+      baseUrl = await ensureBackendRunning();
       if (!skipPersonality && personalityJson.trim()) {
         const doc = JSON.parse(personalityJson) as unknown;
-        await importPersonality(defaultBackend, token, doc);
+        await importPersonality(baseUrl, token, doc);
       }
-      await patchPreferences(defaultBackend, token, {
+      await patchPreferences(baseUrl, token, {
         onboarding_completed: true,
         sliders,
         integrations: { spotify: spotifyConsent, youtube: youtubeConsent },
       });
-      await refreshMe(defaultBackend);
+      markOnboardingComplete({
+        onboarding_completed: true,
+        sliders,
+      });
+      try {
+        await refreshMe(baseUrl);
+      } catch {
+        // Preferences saved; refresh is best-effort for profile sync
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save preferences";
+      const message = formatBackendError(err, baseUrl);
       if (message.includes("401")) {
         setError(
           "Backend could not verify your session. Check SUPABASE_JWT_SECRET in .env matches Supabase → Settings → API → JWT Secret, then restart the backend.",
@@ -74,9 +87,11 @@ export function OnboardingWizard() {
 
   const copyTemplate = async () => {
     setError(null);
+    let baseUrl = await resolveBackendBaseUrl();
     try {
+      baseUrl = await ensureBackendRunning();
       const response = await fetch(
-        `${defaultBackend.replace(/\/+$/, "")}/preferences/personality/template`,
+        `${baseUrl.replace(/\/+$/, "")}/preferences/personality/template`,
       );
       if (!response.ok) {
         throw new Error(`template fetch failed: ${response.status}`);
@@ -84,7 +99,7 @@ export function OnboardingWizard() {
       const template = await response.json();
       setPersonalityJson(JSON.stringify(template, null, 2));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load template");
+      setError(formatBackendError(err, baseUrl));
     }
   };
 
