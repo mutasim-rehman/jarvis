@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from fastapi import Depends, Header, HTTPException
 
 from backend.app.config import settings
-from backend.app.auth.supabase_jwt import SupabaseTokenClaims, verify_supabase_access_token
+from backend.app.auth.supabase_jwt import (
+    SupabaseTokenClaims,
+    user_from_supabase_auth_api,
+    verify_supabase_access_token,
+)
 
 
 @dataclass(frozen=True)
@@ -30,13 +34,18 @@ def _user_from_bearer(authorization: str | None) -> AuthUser | None:
     token = _extract_bearer(authorization)
     if not token:
         return None
-    if not settings.resolved_supabase_jwt_secret():
-        return None
-    try:
-        claims: SupabaseTokenClaims = verify_supabase_access_token(token)
-    except ValueError:
-        return None
-    return AuthUser(user_id=claims.sub, email=claims.email)
+
+    if settings.resolved_supabase_jwt_secret():
+        try:
+            claims: SupabaseTokenClaims = verify_supabase_access_token(token)
+            return AuthUser(user_id=claims.sub, email=claims.email)
+        except ValueError:
+            pass
+
+    claims = user_from_supabase_auth_api(token)
+    if claims is not None:
+        return AuthUser(user_id=claims.sub, email=claims.email)
+    return None
 
 
 async def get_current_user_optional(

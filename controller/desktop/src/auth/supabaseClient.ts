@@ -14,6 +14,7 @@ export function getSupabase(): SupabaseClient | null {
   if (!client) {
     client = createClient(url, key, {
       auth: {
+        flowType: "pkce",
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
@@ -26,7 +27,7 @@ export function getSupabase(): SupabaseClient | null {
 function hasElectronOAuthBridge(): boolean {
   return (
     typeof window !== "undefined" &&
-    Boolean(window.desktopApi?.startOAuthListener && window.desktopApi?.openExternalUrl)
+    Boolean(window.desktopApi?.openOAuthWindow || window.desktopApi?.openExternalUrl)
   );
 }
 
@@ -35,6 +36,11 @@ export async function completeOAuthFromUrl(
   callbackUrl: string,
 ): Promise<void> {
   const url = new URL(callbackUrl);
+  const oauthError = url.searchParams.get("error_description") || url.searchParams.get("error");
+  if (oauthError) {
+    throw new Error(oauthError);
+  }
+
   const code = url.searchParams.get("code");
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -43,6 +49,7 @@ export async function completeOAuthFromUrl(
     }
     return;
   }
+
   const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
   const params = new URLSearchParams(hash);
   const access_token = params.get("access_token");
@@ -54,7 +61,10 @@ export async function completeOAuthFromUrl(
     }
     return;
   }
-  throw new Error("OAuth callback did not include a session code or tokens.");
+
+  throw new Error(
+    "Sign-in did not complete. Add http://127.0.0.1:52847/auth/callback to Supabase redirect URLs and try again.",
+  );
 }
 
 async function signInWithProviderExternal(provider: "google" | "github"): Promise<void> {
@@ -63,6 +73,31 @@ async function signInWithProviderExternal(provider: "google" | "github"): Promis
     throw new Error("Supabase is not configured");
   }
 
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: ELECTRON_OAUTH_REDIRECT,
+      skipBrowserRedirect: true,
+    },
+  });
+  if (error) {
+    throw error;
+  }
+  if (!data?.url) {
+    throw new Error("No OAuth URL returned from Supabase");
+  }
+
+  // Electron window captures ?code= and #access_token= (system browser cannot send hash to localhost).
+  if (window.desktopApi?.openOAuthWindow) {
+    const result = await window.desktopApi.openOAuthWindow(data.url);
+    if (!result.ok || !result.callbackUrl) {
+      throw new Error(result.error || "Sign-in window closed before completing");
+    }
+    await completeOAuthFromUrl(supabase, result.callbackUrl);
+    return;
+  }
+
+  // Fallback: system browser + loopback (PKCE query ?code= only).
   const listenerReady = new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       reject(new Error("Sign-in timed out. Close the browser tab and try again."));
@@ -83,20 +118,6 @@ async function signInWithProviderExternal(provider: "google" | "github"): Promis
   const started = await window.desktopApi.startOAuthListener();
   if (!started.ok) {
     throw new Error(started.error || "Could not start OAuth callback listener");
-  }
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: ELECTRON_OAUTH_REDIRECT,
-      skipBrowserRedirect: true,
-    },
-  });
-  if (error) {
-    throw error;
-  }
-  if (!data?.url) {
-    throw new Error("No OAuth URL returned from Supabase");
   }
 
   const opened = await window.desktopApi.openExternalUrl(data.url);

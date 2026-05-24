@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 
+import httpx
 import jwt
 
 from backend.app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -45,3 +49,43 @@ def verify_supabase_access_token(token: str) -> SupabaseTokenClaims:
     if role is not None:
         role = str(role)
     return SupabaseTokenClaims(sub=sub, email=email, role=role)
+
+
+def user_from_supabase_auth_api(token: str) -> SupabaseTokenClaims | None:
+    """Validate access token via Supabase Auth API (works when local JWT secret mismatches)."""
+    base = settings.resolved_supabase_url()
+    anon = (settings.supabase_anon_key or "").strip()
+    if not base or not anon:
+        return None
+    url = f"{base}/auth/v1/user"
+    try:
+        response = httpx.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "apikey": anon,
+            },
+            timeout=15.0,
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("Supabase auth user lookup failed: %s", exc)
+        return None
+    if response.status_code != 200:
+        logger.warning("Supabase auth user lookup status=%s", response.status_code)
+        return None
+    data = response.json()
+    user = data.get("user") if isinstance(data, dict) else None
+    if not isinstance(user, dict):
+        user = data if isinstance(data, dict) else None
+    if not user:
+        return None
+    try:
+        sub = uuid.UUID(str(user.get("id")))
+    except (ValueError, TypeError):
+        return None
+    email = user.get("email")
+    return SupabaseTokenClaims(
+        sub=sub,
+        email=str(email) if email else None,
+        role="authenticated",
+    )

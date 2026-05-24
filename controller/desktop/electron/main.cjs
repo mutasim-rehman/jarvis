@@ -7,10 +7,13 @@ const http = require("node:http");
 const { app, BrowserWindow, ipcMain, shell } = require("electron");
 
 const OAUTH_CALLBACK_PORT = 52847;
+const OAUTH_CALLBACK_PREFIX = `http://127.0.0.1:${OAUTH_CALLBACK_PORT}/auth/callback`;
 /** @type {import("node:http").Server | null} */
 let oauthCallbackServer = null;
 /** @type {NodeJS.Timeout | null} */
 let oauthCallbackTimeout = null;
+/** @type {BrowserWindow | null} */
+let oauthWindow = null;
 
 function stopOAuthCallbackServer() {
   if (oauthCallbackTimeout) {
@@ -33,6 +36,25 @@ function startOAuthCallbackServer() {
         return;
       }
       const fullUrl = `http://127.0.0.1:${OAUTH_CALLBACK_PORT}${req.url}`;
+      let parsed;
+      try {
+        parsed = new URL(fullUrl);
+      } catch {
+        res.writeHead(400);
+        res.end("Bad callback");
+        return;
+      }
+      const hasCode = Boolean(parsed.searchParams.get("code"));
+      const hasError = Boolean(parsed.searchParams.get("error"));
+      const hasHashTokens =
+        req.url.includes("access_token=") || req.url.includes("refresh_token=");
+
+      if (!hasCode && !hasError && !hasHashTokens) {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end("<html><body style='font-family:sans-serif;padding:48px'>Completing sign-in…</body></html>");
+        return;
+      }
+
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("auth:oauth-callback", fullUrl);
       }
@@ -815,6 +837,82 @@ ipcMain.handle("auth:open-external-url", async (_event, url) => {
   }
   await shell.openExternal(url);
   return { ok: true };
+});
+
+function closeOAuthWindow() {
+  if (oauthWindow && !oauthWindow.isDestroyed()) {
+    oauthWindow.close();
+  }
+  oauthWindow = null;
+}
+
+function openOAuthSignInWindow(oauthUrl) {
+  closeOAuthWindow();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callbackUrl, err) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      closeOAuthWindow();
+      if (err) {
+        reject(err);
+      } else {
+        resolve(callbackUrl);
+      }
+    };
+
+    const handleNavigation = (targetUrl) => {
+      if (!targetUrl || !targetUrl.startsWith(OAUTH_CALLBACK_PREFIX)) {
+        return;
+      }
+      finish(targetUrl, null);
+    };
+
+    oauthWindow = new BrowserWindow({
+      width: 520,
+      height: 760,
+      show: true,
+      autoHideMenuBar: true,
+      title: "Sign in to JARVIS",
+      backgroundColor: "#050505",
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    oauthWindow.webContents.on("will-redirect", (_event, targetUrl) => handleNavigation(targetUrl));
+    oauthWindow.webContents.on("did-navigate", (_event, targetUrl) => handleNavigation(targetUrl));
+    oauthWindow.webContents.on("did-navigate-in-page", (_event, targetUrl) => {
+      handleNavigation(targetUrl);
+    });
+
+    oauthWindow.on("closed", () => {
+      oauthWindow = null;
+      if (!settled) {
+        finish(null, new Error("Sign-in window was closed before completing."));
+      }
+    });
+
+    oauthWindow.loadURL(oauthUrl).catch((err) => {
+      finish(null, err instanceof Error ? err : new Error(String(err)));
+    });
+  });
+}
+
+ipcMain.handle("auth:open-oauth-window", async (_event, oauthUrl) => {
+  if (!oauthUrl || typeof oauthUrl !== "string") {
+    return { ok: false, error: "Missing OAuth URL" };
+  }
+  try {
+    const callbackUrl = await openOAuthSignInWindow(oauthUrl);
+    return { ok: true, callbackUrl };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "OAuth sign-in failed";
+    return { ok: false, error: message };
+  }
 });
 
 ipcMain.handle("backend:interact", async (_event, text, baseUrl, chatProvider, accessToken) => {

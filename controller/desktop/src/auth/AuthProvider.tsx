@@ -21,8 +21,10 @@ type AuthContextValue = {
   session: Session | null;
   accessToken: string | null;
   me: AuthMeResponse | null;
+  backendAuthError: string | null;
   onboardingCompleted: boolean;
   refreshMe: (baseUrl: string) => Promise<void>;
+  resolveAccessToken: () => Promise<string | null>;
   signOut: () => Promise<void>;
   supabaseEnabled: boolean;
 };
@@ -35,20 +37,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(isSupabaseConfigured());
   const [session, setSession] = useState<Session | null>(null);
   const [me, setMe] = useState<AuthMeResponse | null>(null);
+  const [backendAuthError, setBackendAuthError] = useState<string | null>(null);
+
+  const resolveAccessToken = useCallback(async (): Promise<string | null> => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      return null;
+    }
+    const { data, error } = await supabase.auth.getSession();
+    if (!error && data.session?.access_token) {
+      setSession(data.session);
+      return data.session.access_token;
+    }
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed.data.session?.access_token) {
+      setSession(refreshed.data.session);
+      return refreshed.data.session.access_token;
+    }
+    return null;
+  }, []);
 
   const refreshMe = useCallback(async (baseUrl: string = defaultBackend) => {
-    if (!session?.access_token) {
+    const token = await resolveAccessToken();
+    if (!token) {
       setMe(null);
+      setBackendAuthError(null);
       return;
     }
-    const data = await fetchAuthMe(baseUrl, session.access_token);
-    setMe(data);
     try {
-      await registerDevice(baseUrl, session.access_token);
-    } catch {
-      // non-fatal
+      const data = await fetchAuthMe(baseUrl, token);
+      setMe(data);
+      setBackendAuthError(null);
+      try {
+        await registerDevice(baseUrl, token);
+      } catch {
+        // non-fatal
+      }
+    } catch (err) {
+      setMe(null);
+      setBackendAuthError(
+        err instanceof Error ? err.message : "Could not verify account with the backend",
+      );
     }
-  }, [session?.access_token]);
+  }, [resolveAccessToken]);
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -103,12 +134,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       accessToken: session?.access_token ?? null,
       me,
+      backendAuthError,
       onboardingCompleted: me?.onboarding_completed ?? false,
       refreshMe,
+      resolveAccessToken,
       signOut: signOutUser,
       supabaseEnabled: isSupabaseConfigured(),
     }),
-    [loading, session, me, refreshMe, signOutUser],
+    [loading, session, me, backendAuthError, refreshMe, resolveAccessToken, signOutUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

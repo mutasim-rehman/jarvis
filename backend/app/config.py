@@ -38,7 +38,11 @@ class Settings(BaseSettings):
     # Phase 4.5 — Supabase / Postgres
     supabase_url: str = Field(
         default="",
-        validation_alias=AliasChoices("SUPABASE_URL", "supabase_url"),
+        validation_alias=AliasChoices(
+            "SUPABASE_URL",
+            "SUPABASE_PROJECT_URL",
+            "supabase_url",
+        ),
     )
     supabase_anon_key: str = Field(
         default="",
@@ -88,7 +92,13 @@ class Settings(BaseSettings):
         )
 
     def resolved_supabase_jwt_secret(self) -> str:
-        return (self.supabase_jwt_secret or "").strip()
+        return (self.supabase_jwt_secret or "").strip().strip('"').strip("'")
+
+    def resolved_supabase_url(self) -> str:
+        url = (self.supabase_url or "").strip().rstrip("/")
+        if url.endswith("/rest/v1"):
+            url = url[: -len("/rest/v1")]
+        return url
 
     def resolved_database_url(self) -> str:
         url = (self.database_url or "").strip()

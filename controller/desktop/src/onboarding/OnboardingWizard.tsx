@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  fetchPersonalityTemplate,
   importPersonality,
   patchPreferences,
   type PreferenceSliders,
@@ -18,7 +17,7 @@ const defaultSliders: PreferenceSliders = {
 };
 
 export function OnboardingWizard() {
-  const { accessToken, refreshMe } = useAuth();
+  const { refreshMe, resolveAccessToken, backendAuthError } = useAuth();
   const [step, setStep] = useState(0);
   const [sliders, setSliders] = useState<PreferenceSliders>(defaultSliders);
   const [personalityJson, setPersonalityJson] = useState("");
@@ -28,35 +27,47 @@ export function OnboardingWizard() {
   const [error, setError] = useState<string | null>(null);
 
   const finish = async (skipPersonality: boolean) => {
-    if (!accessToken) {
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        throw new Error("Not signed in. Please sign in again.");
+      }
       if (!skipPersonality && personalityJson.trim()) {
         const doc = JSON.parse(personalityJson) as unknown;
-        await importPersonality(defaultBackend, accessToken, doc);
+        await importPersonality(defaultBackend, token, doc);
       }
-      await patchPreferences(defaultBackend, accessToken, {
+      await patchPreferences(defaultBackend, token, {
         onboarding_completed: true,
         sliders,
         integrations: { spotify: spotifyConsent, youtube: youtubeConsent },
       });
       await refreshMe(defaultBackend);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save preferences");
+      const message = err instanceof Error ? err.message : "Failed to save preferences";
+      if (message.includes("401")) {
+        setError(
+          "Backend could not verify your session. Check SUPABASE_JWT_SECRET in .env matches Supabase → Settings → API → JWT Secret, then restart the backend.",
+        );
+      } else {
+        setError(message);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const copyTemplate = async () => {
-    if (!accessToken) {
-      return;
-    }
+    setError(null);
     try {
-      const template = await fetchPersonalityTemplate(defaultBackend, accessToken);
+      const response = await fetch(
+        `${defaultBackend.replace(/\/+$/, "")}/preferences/personality/template`,
+      );
+      if (!response.ok) {
+        throw new Error(`template fetch failed: ${response.status}`);
+      }
+      const template = await response.json();
       setPersonalityJson(JSON.stringify(template, null, 2));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load template");
@@ -67,6 +78,9 @@ export function OnboardingWizard() {
     <main className="onboarding-screen">
       <div className="auth-card" style={{ width: "100%", maxWidth: "520px" }}>
       <h1>Welcome to JARVIS</h1>
+      {backendAuthError ? (
+        <p className="onboarding-error">{backendAuthError}</p>
+      ) : null}
       {step === 0 ? (
         <section>
           <h2>Personality sliders</h2>

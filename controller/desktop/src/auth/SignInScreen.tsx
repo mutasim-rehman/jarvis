@@ -4,12 +4,21 @@ import { GitHubIcon, GoogleIcon } from "./OAuthIcons";
 
 type OAuthProvider = "google" | "github";
 
+function friendlyOAuthError(message: string): string {
+  if (/closed before completing/i.test(message)) {
+    return "The sign-in window was closed before you finished. You can try again when ready.";
+  }
+  return message;
+}
+
 export function SignInScreen() {
   const [busyProvider, setBusyProvider] = useState<OAuthProvider | null>(null);
   const [oauthError, setOauthError] = useState<string | null>(null);
+  const [lastProvider, setLastProvider] = useState<OAuthProvider | null>(null);
 
   const handleSignIn = async (provider: OAuthProvider) => {
     setOauthError(null);
+    setLastProvider(provider);
     setBusyProvider(provider);
     try {
       if (provider === "google") {
@@ -18,15 +27,27 @@ export function SignInScreen() {
         await signInWithGitHub();
       }
     } catch (err) {
-      setOauthError(err instanceof Error ? err.message : "Sign-in failed");
+      setOauthError(
+        friendlyOAuthError(err instanceof Error ? err.message : "Sign-in failed"),
+      );
     } finally {
       setBusyProvider(null);
     }
   };
 
+  const retryLast = () => {
+    if (lastProvider) {
+      void handleSignIn(lastProvider);
+    }
+  };
+
+  const dismissError = () => {
+    setOauthError(null);
+  };
+
   const label = (provider: OAuthProvider, defaultText: string) => {
     if (busyProvider === provider) {
-      return "Opening in browser…";
+      return "Opening sign-in window…";
     }
     return defaultText;
   };
@@ -41,8 +62,7 @@ export function SignInScreen() {
           <h1>Sign in to JARVIS</h1>
         </div>
         <p className="auth-subtitle">
-          One account for desktop, hub, and mobile. You&apos;ll sign in in your browser, then return
-          here.
+          One account for desktop, hub, and mobile. A sign-in window will open for Google or GitHub.
         </p>
         <div className="auth-actions">
           <button
@@ -64,7 +84,32 @@ export function SignInScreen() {
             <span>{label("github", "Continue with GitHub")}</span>
           </button>
         </div>
-        {oauthError ? <p className="auth-error">{oauthError}</p> : null}
+        {oauthError ? (
+          <div className="auth-error-panel" role="alert">
+            <p className="auth-error">{oauthError}</p>
+            <div className="auth-error-actions">
+              {lastProvider ? (
+                <button
+                  type="button"
+                  className="auth-retry-btn"
+                  disabled={busyProvider !== null}
+                  onClick={() => void retryLast()}
+                >
+                  Try again
+                  {lastProvider === "google" ? " with Google" : " with GitHub"}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="auth-dismiss-btn"
+                disabled={busyProvider !== null}
+                onClick={dismissError}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );

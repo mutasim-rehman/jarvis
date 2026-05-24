@@ -84,6 +84,9 @@ interface DesktopApi {
   ) => Promise<{ ok: true }>;
   startOAuthListener: () => Promise<{ ok: true; port?: number } | { ok: false; error: string }>;
   openExternalUrl: (url: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  openOAuthWindow: (
+    oauthUrl: string,
+  ) => Promise<{ ok: true; callbackUrl: string } | { ok: false; error: string }>;
   onOAuthCallback: (callback: (callbackUrl: string) => void) => () => void;
   interactWithBackend: (
     text: string,

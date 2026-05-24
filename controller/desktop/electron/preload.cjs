@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("desktopApi", {
     ipcRenderer.invoke("auth:set-session", accessToken, deviceId),
   startOAuthListener: () => ipcRenderer.invoke("auth:start-oauth-listener"),
   openExternalUrl: (url) => ipcRenderer.invoke("auth:open-external-url", url),
+  openOAuthWindow: (oauthUrl) => ipcRenderer.invoke("auth:open-oauth-window", oauthUrl),
   onOAuthCallback: (callback) => {
     const listener = (_event, callbackUrl) => callback(callbackUrl);
     ipcRenderer.on("auth:oauth-callback", listener);
