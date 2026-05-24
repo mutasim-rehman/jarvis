@@ -425,7 +425,24 @@ async function waitForHealthyApi(serviceId, timeoutMs = 60000) {
   return `${label} did not become healthy within ${Math.round(timeoutMs / 1000)}s (${lastError}). Check service logs.`;
 }
 
-async function callInteract(text, baseUrl, chatProvider) {
+let authAccessToken = null;
+let authDeviceId = null;
+
+function buildBackendHeaders(extra = {}) {
+  const headers = { ...extra };
+  if (authAccessToken) {
+    headers.Authorization = `Bearer ${authAccessToken}`;
+  }
+  if (authDeviceId) {
+    headers["X-Device-Id"] = authDeviceId;
+  }
+  return headers;
+}
+
+async function callInteract(text, baseUrl, chatProvider, accessToken) {
+  if (accessToken) {
+    authAccessToken = accessToken;
+  }
   const url = `${baseUrl.replace(/\/+$/, "")}/api/interact`;
   const startedAt = Date.now();
   let response;
@@ -436,9 +453,9 @@ async function callInteract(text, baseUrl, chatProvider) {
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: {
+      headers: buildBackendHeaders({
         "Content-Type": "application/json",
-      },
+      }),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
     });
@@ -464,9 +481,9 @@ async function callTranscribe(wavBytes, baseUrl) {
   const startedAt = Date.now();
   const response = await fetch(url, {
     method: "POST",
-    headers: {
+    headers: buildBackendHeaders({
       "Content-Type": "audio/wav",
-    },
+    }),
     body: wavBuffer,
     signal: AbortSignal.timeout(45000),
   });
@@ -485,9 +502,9 @@ async function callTts(text, baseUrl) {
   const startedAt = Date.now();
   const response = await fetch(url, {
     method: "POST",
-    headers: {
+    headers: buildBackendHeaders({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify({ text }),
     signal: AbortSignal.timeout(60000),
   });
@@ -727,9 +744,15 @@ ipcMain.handle("services:stop-all", async () => {
 });
 ipcMain.handle("services:health", async (_event, serviceId) => checkHealth(serviceId));
 ipcMain.handle("services:base-url", async (_event, serviceId) => getServiceBaseUrl(serviceId));
-ipcMain.handle("backend:interact", async (_event, text, baseUrl, chatProvider) => {
+ipcMain.handle("auth:set-session", async (_event, accessToken, deviceId) => {
+  authAccessToken = accessToken || null;
+  authDeviceId = deviceId || null;
+  return { ok: true };
+});
+
+ipcMain.handle("backend:interact", async (_event, text, baseUrl, chatProvider, accessToken) => {
   try {
-    const data = await callInteract(text, baseUrl, chatProvider);
+    const data = await callInteract(text, baseUrl, chatProvider, accessToken);
     return { ok: true, data };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

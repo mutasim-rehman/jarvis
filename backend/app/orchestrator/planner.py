@@ -103,13 +103,22 @@ async def _call_provider(system: str, user: str) -> tuple[str, dict[str, Any]]:
         return await ollama_plan.generate_plan_json(system, user)
 
 
-async def plan(user_text: str, *, catalog: ToolCatalog | None = None) -> tuple[OrchestratorPlan, dict[str, Any]]:
+async def plan(
+    user_text: str,
+    *,
+    catalog: ToolCatalog | None = None,
+    preference_context: str | None = None,
+) -> tuple[OrchestratorPlan, dict[str, Any]]:
     """
     Build an execution plan for the user goal.
     Returns (plan, meta) where meta includes orchestrator_provider and timing.
     """
     cat = catalog or await catalog_client.fetch_catalog()
-    system = build_orchestrator_system_prompt(cat, settings.orchestrator_max_steps)
+    system = build_orchestrator_system_prompt(
+        cat,
+        settings.orchestrator_max_steps,
+        preference_context=preference_context,
+    )
     user = f"User request:\n{user_text.strip()}"
 
     meta: dict[str, Any] = {}

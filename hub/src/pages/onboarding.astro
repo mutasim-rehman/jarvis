@@ -1,0 +1,147 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Onboarding" description="Configure your JARVIS preferences.">
+  <main class="mx-auto max-w-xl px-6 py-16">
+    <h1 class="text-3xl font-semibold text-white">Set up JARVIS</h1>
+    <p class="mt-2 text-slate-400">Adjust how JARVIS speaks and behaves. You can skip optional steps.</p>
+
+    <section class="mt-10 space-y-6" id="onboarding-root">
+      <div>
+        <h2 class="text-lg text-white">Personality sliders</h2>
+        <div class="mt-4 space-y-3" id="sliders"></div>
+      </div>
+
+      <div>
+        <h2 class="text-lg text-white">Optional: AI personality import</h2>
+        <p class="mt-1 text-sm text-slate-400">
+          Copy the template into ChatGPT or Gemini, ask it to fill the JSON about you, then paste below.
+        </p>
+        <button type="button" id="load-template" class="mt-3 rounded-lg border border-slate-600 px-4 py-2 text-sm">
+          Load empty template
+        </button>
+        <textarea
+          id="personality-json"
+          rows="10"
+          class="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900 p-3 font-mono text-sm text-slate-200"
+          placeholder="Paste completed JSON (optional)"
+        ></textarea>
+      </div>
+
+      <div class="space-y-2">
+        <label class="flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" id="spotify-consent" />
+          Connect Spotify taste data later
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" id="youtube-consent" />
+          Import YouTube history later
+        </label>
+      </div>
+
+      <button
+        type="button"
+        id="finish-onboarding"
+        class="rounded-lg bg-cyan-600 px-6 py-2.5 font-medium text-white hover:bg-cyan-500"
+      >
+        Finish onboarding
+      </button>
+      <p id="onboarding-error" class="text-sm text-red-400 hidden"></p>
+    </section>
+  </main>
+</BaseLayout>
+
+<script>
+  import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
+  import {
+    fetchAuthMe,
+    fetchPersonalityTemplate,
+    importPersonality,
+    patchPreferences,
+  } from "../lib/hubBackendApi";
+
+  const sliderKeys = ["honesty", "humor", "formality", "verbosity", "proactivity"] as const;
+  const sliders: Record<string, number> = {
+    honesty: 0.7,
+    humor: 0.4,
+    formality: 0.6,
+    verbosity: 0.5,
+    proactivity: 0.5,
+  };
+
+  const slidersEl = document.getElementById("sliders");
+  if (slidersEl) {
+    for (const key of sliderKeys) {
+      const label = document.createElement("label");
+      label.className = "block text-sm text-slate-300";
+      label.innerHTML = `<span class="capitalize">${key}</span>
+        <input type="range" min="0" max="1" step="0.05" value="${sliders[key]}" data-key="${key}" class="mt-1 w-full" />`;
+      slidersEl.appendChild(label);
+      label.querySelector("input")?.addEventListener("input", (e) => {
+        const t = e.target as HTMLInputElement;
+        sliders[t.dataset.key || key] = Number(t.value);
+      });
+    }
+  }
+
+  async function requireSession() {
+    if (!isSupabaseConfigured()) {
+      window.location.href = "/";
+      return null;
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return null;
+    }
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      window.location.href = "/account";
+      return null;
+    }
+    return data.session.access_token;
+  }
+
+  document.getElementById("load-template")?.addEventListener("click", async () => {
+    const token = await requireSession();
+    if (!token) {
+      return;
+    }
+    const template = await fetchPersonalityTemplate(token);
+    const area = document.getElementById("personality-json") as HTMLTextAreaElement | null;
+    if (area) {
+      area.value = JSON.stringify(template, null, 2);
+    }
+  });
+
+  document.getElementById("finish-onboarding")?.addEventListener("click", async () => {
+    const errEl = document.getElementById("onboarding-error");
+    const token = await requireSession();
+    if (!token) {
+      return;
+    }
+    try {
+      const personalityRaw = (document.getElementById("personality-json") as HTMLTextAreaElement)?.value.trim();
+      if (personalityRaw) {
+        await importPersonality(token, JSON.parse(personalityRaw));
+      }
+      await patchPreferences(token, {
+        onboarding_completed: true,
+        sliders,
+        integrations: {
+          spotify: (document.getElementById("spotify-consent") as HTMLInputElement)?.checked ?? false,
+          youtube: (document.getElementById("youtube-consent") as HTMLInputElement)?.checked ?? false,
+        },
+      });
+      await fetchAuthMe(token);
+      window.location.href = "/";
+    } catch (e) {
+      if (errEl) {
+        errEl.textContent = e instanceof Error ? e.message : "Save failed";
+        errEl.classList.remove("hidden");
+      }
+    }
+  });
+
+  void requireSession();
+</script>

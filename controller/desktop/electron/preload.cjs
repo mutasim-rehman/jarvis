@@ -8,8 +8,10 @@ contextBridge.exposeInMainWorld("desktopApi", {
   stopAllServices: () => ipcRenderer.invoke("services:stop-all"),
   checkServiceHealth: (serviceId) => ipcRenderer.invoke("services:health", serviceId),
   getServiceBaseUrl: (serviceId) => ipcRenderer.invoke("services:base-url", serviceId),
-  interactWithBackend: (text, baseUrl, chatProvider) =>
-    ipcRenderer.invoke("backend:interact", text, baseUrl, chatProvider),
+  setAuthSession: (accessToken, deviceId) =>
+    ipcRenderer.invoke("auth:set-session", accessToken, deviceId),
+  interactWithBackend: (text, baseUrl, chatProvider, accessToken) =>
+    ipcRenderer.invoke("backend:interact", text, baseUrl, chatProvider, accessToken),
   transcribeAudio: (wavBytes, baseUrl) => ipcRenderer.invoke("backend:transcribe", wavBytes, baseUrl),
   synthesizeSpeech: (text, baseUrl) => ipcRenderer.invoke("backend:tts", text, baseUrl),
   getVoiceprintStatus: (baseUrl) => ipcRenderer.invoke("backend:voiceprint-status", baseUrl),

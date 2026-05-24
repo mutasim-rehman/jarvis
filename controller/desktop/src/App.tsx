@@ -26,6 +26,7 @@ import type { ConversationMessage, ConversationRole } from "./types/conversation
 import { sanitizeVoiceCommand, voiceprintEnrollmentPrompt } from "./voiceUtils";
 import "./AppClean.css";
 import { JarvisHUD } from "./JarvisHUD";
+import { useAuth } from "./auth/AuthProvider";
 
 const healthServiceIds: ServiceId[] = ["backend", "executor"];
 const coreServiceIds: ServiceId[] = ["backend", "executor"];
@@ -95,6 +96,7 @@ const MIC_DUPLICATE_WINDOW_MS = 4500;
 const SPEAK_MODE_VOICEPRINT_REQUIRED_PASSES = 1;
 const PREFER_LOCAL_MIC = true;
 export default function App() {
+  const { accessToken } = useAuth();
   const [activeView, setActiveView] = useState<AppView>("chat");
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [health, setHealth] = useState(defaultHealthMap);
@@ -690,7 +692,12 @@ export default function App() {
     }, 1200);
     const provider = chatProvider ?? activeProvider;
     try {
-      const result = await window.desktopApi.interactWithBackend(text, backendBaseUrl, provider);
+      const result = await window.desktopApi.interactWithBackend(
+        text,
+        backendBaseUrl,
+        provider,
+        accessToken,
+      );
       if ("error" in result) {
         addMessage("system", `Backend error: ${result.error}`);
         return;

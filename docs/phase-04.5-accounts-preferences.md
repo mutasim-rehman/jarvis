@@ -14,10 +14,10 @@ This phase is designed to feed directly into **Phase 5 (Memory, Context Awarenes
 |--------|------------|
 | **API** | Existing FastAPI backend; new routes under `/auth`, `/users`, `/preferences` |
 | **ORM & DB** | [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (+ optional [SQLModel](https://sqlmodel.tiangolo.com/)) |
-| **Database** | [SQLite](https://www.sqlite.org/) for dev/single-user; [PostgreSQL](https://www.postgresql.org/) for multi-user or hosted deploy |
-| **Migrations** | [Alembic](https://alembic.sqlalchemy.org/) |
-| **Sign-in** | OAuth 2.0 / OpenID Connect — [Google](https://developers.google.com/identity), [GitHub](https://docs.github.com/en/apps/oauth-apps); optional email/password or magic-link (product choice) |
-| **Sessions** | Signed JWT or server-side sessions; secure HTTP-only cookies for web desktop |
+| **Database** | [Supabase](https://supabase.com/) Postgres (`profiles`, `preferences`, `pairing_sessions`, `device_links`, `tasks`) via `DATABASE_URL` |
+| **Auth** | Supabase Auth (Google, GitHub); backend verifies `Authorization: Bearer` with `SUPABASE_JWT_SECRET` |
+| **Sign-in UI** | Desktop Electron (`controller/desktop`) and hub (`hub/`) |
+| **Sessions** | Supabase access JWT; optional `X-Device-Id` header per client |
 | **Preference schema** | Pydantic models in `shared/` — personality sliders, content defaults, integration toggles |
 | **Personality profile (optional import)** | Versioned `PersonalityProfileV1` JSON — user-filled via external LLM (ChatGPT, Gemini, etc.) and pasted/uploaded at onboarding |
 | **External taste data (optional)** | Extend existing executor OAuth patterns ([Spotify](https://developer.spotify.com/documentation/web-api), YouTube Data API or export/import for watch history / watch-later) |
@@ -195,3 +195,11 @@ Stored in `shared/` as a versioned Pydantic model (e.g. `PersonalityProfileV1`).
 - AI-filled personality JSON may be verbose—store full document but inject **summaries** into the planner to control token cost.
 - Users may paste over-generated or hallucinated traits from external LLMs; onboarding should allow **review/edit** or re-import before locking.
 - Align desktop executor token storage with per-user identity when multiple users share one machine (future consideration).
+
+## Implementation (repo)
+
+- Shared models: [`shared/preferences.py`](../shared/preferences.py)
+- Backend: [`backend/app/routes/`](../backend/app/routes/), [`backend/app/db/`](../backend/app/db/), [`backend/app/auth/`](../backend/app/auth/)
+- Preference context injection: [`backend/app/preferences_context.py`](../backend/app/preferences_context.py), orchestrator + chat paths
+- Setup guide: [supabase-phase-4.5.md](supabase-phase-4.5.md)
+- Env template: [`.env.example`](../.env.example) (`SUPABASE_*`, `DATABASE_URL`, `API_AUTH_MODE`)

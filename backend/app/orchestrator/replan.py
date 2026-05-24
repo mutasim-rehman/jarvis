@@ -56,9 +56,14 @@ async def replan(
     prior_results: list[TaskResult],
     catalog: ToolCatalog | None = None,
     replan_attempt: int = 1,
+    preference_context: str | None = None,
 ) -> tuple[OrchestratorPlan, dict[str, Any]]:
     cat = catalog or await catalog_client.fetch_catalog(force=True)
-    system = build_orchestrator_system_prompt(cat, settings.orchestrator_max_steps)
+    system = build_orchestrator_system_prompt(
+        cat,
+        settings.orchestrator_max_steps,
+        preference_context=preference_context,
+    )
 
     failed_idx = next((i for i, r in enumerate(prior_results) if not r.success), len(prior_results))
     user = build_replan_user_prompt(

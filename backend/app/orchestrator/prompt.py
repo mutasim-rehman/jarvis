@@ -47,14 +47,22 @@ def _format_apps(catalog: ToolCatalog, limit: int = 40) -> str:
     return ", ".join(apps)
 
 
-def build_orchestrator_system_prompt(catalog: ToolCatalog, max_steps: int) -> str:
+def build_orchestrator_system_prompt(
+    catalog: ToolCatalog,
+    max_steps: int,
+    *,
+    preference_context: str | None = None,
+) -> str:
     persona = _load_persona_snippet()
     tools_block = _format_tools(catalog)
     apps_block = _format_apps(catalog)
     tags = ", ".join(catalog.capability_tags) if catalog.capability_tags else "none"
+    pref_block = ""
+    if preference_context and preference_context.strip():
+        pref_block = f"\n{preference_context.strip()}\n"
 
     return f"""{persona}
-
+{pref_block}
 You are the JARVIS orchestrator. The user states a goal; you produce an execution plan using ONLY the available tools below.
 
 ACTIVE CAPABILITY TAGS: {tags}

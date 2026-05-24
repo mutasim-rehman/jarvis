@@ -42,10 +42,13 @@ def load_personality_prompt() -> str:
     return "\n".join(lines)
 
 
-def build_base_system_message() -> str:
+def build_base_system_message(*, preference_context: str | None = None) -> str:
     personality_prompt = load_personality_prompt()
+    pref_block = ""
+    if preference_context and preference_context.strip():
+        pref_block = f"\n{preference_context.strip()}\n"
     return (
         "You are JARVIS, a professional and proactive AI assistant.\n"
         "Your goal is to understand user intent and provide a natural response followed by a structural command IF an action is required.\n"
-        f"{personality_prompt}"
+        f"{personality_prompt}{pref_block}"
     )

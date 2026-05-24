@@ -1,0 +1,49 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Signing in" description="Completing JARVIS sign-in.">
+  <main class="mx-auto max-w-lg px-6 py-24 text-center">
+    <h1 class="text-2xl font-semibold text-white">Signing you in…</h1>
+    <p id="auth-status" class="mt-4 text-slate-400">Please wait.</p>
+  </main>
+</BaseLayout>
+
+<script>
+  import { getSupabase } from "../../lib/supabaseClient";
+
+  const status = document.getElementById("auth-status");
+  const supabase = getSupabase();
+  if (!supabase) {
+    if (status) status.textContent = "Supabase is not configured on this site.";
+  } else {
+    supabase.auth
+      .getSession()
+      .then(async ({ data }) => {
+        if (!data.session) {
+          if (status) status.textContent = "No session found. Try signing in again.";
+          return;
+        }
+        const me = await fetch(
+          `${(import.meta.env.PUBLIC_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/+$/, "")}/auth/me`,
+          {
+            headers: {
+              Authorization: `Bearer ${data.session.access_token}`,
+            },
+          },
+        );
+        if (!me.ok) {
+          if (status) status.textContent = "Signed in, but backend could not load profile.";
+          setTimeout(() => {
+            window.location.href = "/onboarding";
+          }, 1500);
+          return;
+        }
+        const profile = await me.json();
+        window.location.href = profile.onboarding_completed ? "/" : "/onboarding";
+      })
+      .catch((err) => {
+        if (status) status.textContent = err?.message || "Sign-in failed.";
+      });
+  }
+</script>

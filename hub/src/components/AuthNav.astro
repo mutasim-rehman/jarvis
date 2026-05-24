@@ -1,0 +1,13 @@
+---
+const supabaseConfigured = Boolean(
+  import.meta.env.PUBLIC_SUPABASE_URL && import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+);
+---
+
+{
+  supabaseConfigured ? (
+    <a href="/account" class="header-btn" id="auth-nav-link">
+      Account
+    </a>
+  ) : null
+}

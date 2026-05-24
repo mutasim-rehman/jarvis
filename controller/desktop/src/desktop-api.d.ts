@@ -78,10 +78,15 @@ interface DesktopApi {
   stopAllServices: () => Promise<ServiceStatus[]>;
   checkServiceHealth: (serviceId: ServiceId) => Promise<HealthResponse>;
   getServiceBaseUrl: (serviceId: ServiceId) => Promise<string>;
+  setAuthSession: (
+    accessToken: string | null,
+    deviceId: string | null,
+  ) => Promise<{ ok: true }>;
   interactWithBackend: (
     text: string,
     baseUrl: string,
     chatProvider?: "huggingface" | "ollama",
+    accessToken?: string | null,
   ) => Promise<{ ok: true; data: unknown } | { ok: false; error: string }>;
   transcribeAudio: (
     wavBytes: Uint8Array,

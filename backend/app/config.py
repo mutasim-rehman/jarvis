@@ -25,6 +25,28 @@ class Settings(BaseSettings):
     api_require_auth: bool = False
     api_dev_token: str = ""
     api_key_header: str = "X-API-Key"
+    api_auth_mode: str = Field(
+        default="optional",
+        validation_alias=AliasChoices("API_AUTH_MODE", "api_auth_mode"),
+    )
+
+    # Phase 4.5 — Supabase / Postgres
+    supabase_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("SUPABASE_URL", "supabase_url"),
+    )
+    supabase_anon_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("SUPABASE_ANON_KEY", "supabase_anon_key"),
+    )
+    supabase_jwt_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("SUPABASE_JWT_SECRET", "supabase_jwt_secret"),
+    )
+    database_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("DATABASE_URL", "database_url"),
+    )
 
     # Phase 3: Integration with executor
     executor_base_url: str = "http://127.0.0.1:8001"
@@ -59,6 +81,12 @@ class Settings(BaseSettings):
             or (self.google_gemini_key or "").strip()
             or (os.environ.get("Google_Gemini_Key") or "").strip()
         )
+
+    def resolved_supabase_jwt_secret(self) -> str:
+        return (self.supabase_jwt_secret or "").strip()
+
+    def resolved_database_url(self) -> str:
+        return (self.database_url or "").strip()
 
     def resolved_orchestrator_model(self) -> str:
         """Prefer ORCHESTRATOR_GEMINI_MODEL, then ORCHESTRATOR_MODEL."""

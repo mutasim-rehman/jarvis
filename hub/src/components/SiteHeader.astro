@@ -1,5 +1,6 @@
 ---
 import { site } from "../config/site";
+import AuthNav from "./AuthNav.astro";
 
 interface Props {
   heroHeader?: boolean;
@@ -37,6 +38,7 @@ const nav = [
     </nav>
 
     <div class="header-right">
+      <AuthNav />
       {
         path !== "/waitlist" ? (
           <a href="/waitlist" class="header-cta">

@@ -22,8 +22,11 @@ from shared.schema import (
     RunCommandResponse,
     SCHEMA_VERSION,
 )
+from .auth.deps import AuthUser, verify_api_auth
 from .config import settings
 from .parser import parse_intent
+from .preferences_context import load_preference_context_for_user
+from .routes import api_router
 from .executor_client import executor_client
 from .orchestrator.replan import replan
 from .orchestrator.telemetry import log_execution
@@ -43,6 +46,8 @@ app = FastAPI(
     version=SCHEMA_VERSION,
     description="Phase 1: natural language → structured commands (OpenAPI for clients).",
 )
+
+app.include_router(api_router)
 
 # Allow the Electron renderer (localhost:5173 in dev, app:// in prod) to call
 # streaming endpoints like /api/tts/stream directly via fetch.
@@ -123,16 +128,28 @@ async def health_check():
     }
 
 
+def _preference_context_for_user(auth_user: AuthUser | None) -> str | None:
+    if auth_user is None:
+        return None
+    return load_preference_context_for_user(auth_user.user_id)
+
+
 @app.post("/api/parse", response_model=ParseResponse)
 async def parse_text(
     request: ParseRequest,
     _: None = Depends(verify_dev_api_key),
+    auth_user: AuthUser | None = Depends(verify_api_auth),
 ):
     started = time.perf_counter()
+    pref_ctx = _preference_context_for_user(auth_user)
     if request.chat_provider:
-        command = await parse_intent(request.text, chat_provider=request.chat_provider)
+        command = await parse_intent(
+            request.text,
+            chat_provider=request.chat_provider,
+            preference_context=pref_ctx,
+        )
     else:
-        command = await parse_intent(request.text)
+        command = await parse_intent(request.text, preference_context=pref_ctx)
     logger.info(
         "parse_api timing total_ms=%.1f route=%s has_command=%s",
         (time.perf_counter() - started) * 1000,
@@ -192,16 +209,22 @@ def _apply_execution_to_response(assistant_resp, execution_result: RunCommandRes
 async def interact(
     request: ParseRequest,
     _: None = Depends(verify_dev_api_key),
+    auth_user: AuthUser | None = Depends(verify_api_auth),
 ):
     """
     Parse natural language, execute via orchestrator plan, replan on failure (Phase 2).
     """
+    pref_ctx = _preference_context_for_user(auth_user)
     request_started = time.perf_counter()
     parse_started = time.perf_counter()
     if request.chat_provider:
-        assistant_resp = await parse_intent(request.text, chat_provider=request.chat_provider)
+        assistant_resp = await parse_intent(
+            request.text,
+            chat_provider=request.chat_provider,
+            preference_context=pref_ctx,
+        )
     else:
-        assistant_resp = await parse_intent(request.text)
+        assistant_resp = await parse_intent(request.text, preference_context=pref_ctx)
     parse_ms = (time.perf_counter() - parse_started) * 1000
 
     execution_result: RunCommandResponse | None = None
@@ -239,6 +262,7 @@ async def interact(
             goal=goal,
             prior_results=execution_result.results,
             replan_attempt=replan_count,
+            preference_context=pref_ctx,
         )
         assistant_resp.meta.update(replan_meta)
         assistant_resp.meta["replan_count"] = replan_count

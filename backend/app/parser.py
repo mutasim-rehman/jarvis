@@ -95,7 +95,12 @@ def _wrap(
     return AssistantResponse(message=message, command=command, route=route, meta=meta or {})
 
 
-async def parse_intent(text: str, chat_provider: str | None = None) -> AssistantResponse:
+async def parse_intent(
+    text: str,
+    chat_provider: str | None = None,
+    *,
+    preference_context: str | None = None,
+) -> AssistantResponse:
     del chat_provider  # orchestrator uses ORCHESTRATOR_PROVIDER, not chat router
     started = time.perf_counter()
 
@@ -123,7 +128,7 @@ async def parse_intent(text: str, chat_provider: str | None = None) -> Assistant
             "orchestrator_suppressed",
         )
 
-    plan_obj, meta = await orchestrator_plan(text)
+    plan_obj, meta = await orchestrator_plan(text, preference_context=preference_context)
 
     if plan_obj.clarification_question:
         return _finish(

@@ -1,0 +1,78 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Account" description="Sign in to JARVIS.">
+  <main class="mx-auto max-w-md px-6 py-24 text-center">
+    <h1 class="text-3xl font-semibold text-white">Your account</h1>
+    <p id="account-status" class="mt-4 text-slate-400">Loading…</p>
+    <div id="signed-out" class="mt-8 hidden flex-col gap-3">
+      <button type="button" id="signin-google" class="rounded-lg border border-slate-600 px-4 py-2.5">
+        Continue with Google
+      </button>
+      <button type="button" id="signin-github" class="rounded-lg border border-slate-600 px-4 py-2.5">
+        Continue with GitHub
+      </button>
+    </div>
+    <div id="signed-in" class="mt-8 hidden flex-col gap-3">
+      <p id="account-email" class="text-sm text-slate-300"></p>
+      <a href="/onboarding" class="text-cyan-400 hover:underline">Edit preferences</a>
+      <button type="button" id="signout" class="rounded-lg border border-slate-600 px-4 py-2">Sign out</button>
+    </div>
+  </main>
+</BaseLayout>
+
+<script>
+  import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
+
+  const status = document.getElementById("account-status");
+  const out = document.getElementById("signed-out");
+  const inn = document.getElementById("signed-in");
+  const emailEl = document.getElementById("account-email");
+
+  async function refresh() {
+    if (!isSupabaseConfigured()) {
+      if (status) status.textContent = "Sign-in is not configured on this deployment.";
+      return;
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      return;
+    }
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      if (status) status.textContent = "Sign in to sync preferences across devices.";
+      out?.classList.remove("hidden");
+      out?.classList.add("flex");
+      inn?.classList.add("hidden");
+      return;
+    }
+    if (status) status.textContent = "You are signed in.";
+    out?.classList.add("hidden");
+    inn?.classList.remove("hidden");
+    inn?.classList.add("flex");
+    if (emailEl) emailEl.textContent = data.session.user.email ?? data.session.user.id;
+  }
+
+  document.getElementById("signin-google")?.addEventListener("click", async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+  });
+
+  document.getElementById("signin-github")?.addEventListener("click", async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    await supabase.auth.signInWithOAuth({ provider: "github", options: { redirectTo } });
+  });
+
+  document.getElementById("signout")?.addEventListener("click", async () => {
+    const supabase = getSupabase();
+    if (supabase) await supabase.auth.signOut();
+    window.location.href = "/";
+  });
+
+  void refresh();
+</script>
