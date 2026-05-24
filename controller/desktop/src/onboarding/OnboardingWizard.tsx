@@ -34,7 +34,15 @@ const SLIDER_LABELS: Record<keyof PreferenceSliders, string> = {
 };
 
 export function OnboardingWizard() {
-  const { refreshMe, markOnboardingComplete, resolveAccessToken, backendAuthError } = useAuth();
+  const {
+    refreshMe,
+    markOnboardingComplete,
+    resolveAccessToken,
+    backendAuthError,
+    signOut,
+    session,
+    me,
+  } = useAuth();
   const [step, setStep] = useState(0);
   const [sliders, setSliders] = useState<PreferenceSliders>(defaultSliders);
   const [personalityJson, setPersonalityJson] = useState("");
@@ -85,6 +93,20 @@ export function OnboardingWizard() {
     }
   };
 
+  const signedInAs = me?.email ?? session?.user.email ?? null;
+
+  const handleChangeAccount = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await signOut();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign out");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const copyTemplate = async () => {
     setError(null);
     let baseUrl = await resolveBackendBaseUrl();
@@ -116,6 +138,11 @@ export function OnboardingWizard() {
           <p className="onboarding-lead">
             Set how JARVIS talks to you. You can change these later in settings.
           </p>
+          {signedInAs ? (
+            <p className="onboarding-signed-in">
+              Signed in as <strong>{signedInAs}</strong>
+            </p>
+          ) : null}
           <ol className="onboarding-steps" aria-label="Onboarding progress">
             {STEPS.map((item) => (
               <li
@@ -133,6 +160,14 @@ export function OnboardingWizard() {
               </li>
             ))}
           </ol>
+          <button
+            type="button"
+            className="onboarding-change-account"
+            disabled={busy}
+            onClick={() => void handleChangeAccount()}
+          >
+            Use a different account
+          </button>
         </aside>
 
         <div className="onboarding-panel auth-card">
@@ -167,8 +202,16 @@ export function OnboardingWizard() {
                 )}
               </div>
               <div className="onboarding-actions">
-                <button type="button" onClick={() => setStep(1)}>
+                <button type="button" disabled={busy} onClick={() => setStep(1)}>
                   Next
+                </button>
+                <button
+                  type="button"
+                  className="onboarding-btn-secondary"
+                  disabled={busy}
+                  onClick={() => void handleChangeAccount()}
+                >
+                  Back to sign in
                 </button>
               </div>
             </section>
