@@ -17,6 +17,9 @@ from sqlalchemy import text
 
 
 def main() -> int:
+    from backend.app.config import _REPO_ENV
+
+    print("Env file:", _REPO_ENV, "(exists)" if _REPO_ENV.is_file() else "(missing)")
     print("SUPABASE_URL:", "set" if settings.supabase_url else "MISSING")
     print("SUPABASE_JWT_SECRET:", "set" if settings.resolved_supabase_jwt_secret() else "MISSING")
     print("DATABASE_URL:", "set" if settings.resolved_database_url() else "MISSING")
@@ -24,10 +27,6 @@ def main() -> int:
     if not database_configured():
         print("\nFAIL: DATABASE_URL is not configured.")
         return 1
-
-    url = settings.resolved_database_url()
-    if url.startswith("postgresql://") and "+psycopg" not in url:
-        print("\nWARN: Use postgresql+psycopg:// for SQLAlchemy (not postgresql:// only).")
 
     try:
         with session_scope() as session:

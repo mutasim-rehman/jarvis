@@ -1,7 +1,12 @@
 import os
+from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Always load repo-root .env first (works when cwd is backend/ or controller/).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ENV = _REPO_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -86,7 +91,15 @@ class Settings(BaseSettings):
         return (self.supabase_jwt_secret or "").strip()
 
     def resolved_database_url(self) -> str:
-        return (self.database_url or "").strip()
+        url = (self.database_url or "").strip()
+        if not url:
+            return ""
+        # Supabase dashboard URLs use postgresql:// → SQLAlchemy defaults to psycopg2.
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg://" + url[len("postgresql://") :]
+        elif url.startswith("postgres://"):
+            url = "postgresql+psycopg://" + url[len("postgres://") :]
+        return url
 
     def resolved_orchestrator_model(self) -> str:
         """Prefer ORCHESTRATOR_GEMINI_MODEL, then ORCHESTRATOR_MODEL."""
@@ -133,7 +146,7 @@ class Settings(BaseSettings):
     tts_piper_noise_w: float = 0.8
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(_REPO_ENV), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
