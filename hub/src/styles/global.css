@@ -136,3 +136,137 @@ body {
   color: var(--color-jarvis-fg);
   font-weight: 600;
 }
+
+/* ── Site header (all pages) ─────────────────────────────────── */
+.site-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(5, 5, 5, 0.82);
+  backdrop-filter: blur(12px);
+  transition: background 0.35s, border-color 0.35s, backdrop-filter 0.35s;
+}
+
+.site-header.hero-mode {
+  background: transparent;
+  border-bottom-color: transparent;
+  backdrop-filter: none;
+}
+
+.site-header.hero-mode.scrolled {
+  background: rgba(5, 5, 5, 0.82);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+}
+
+.header-inner {
+  max-width: 1152px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  gap: 1rem;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+  text-decoration: none;
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.header-link {
+  color: var(--color-jarvis-muted);
+  text-decoration: none;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.5rem;
+  transition: color 0.2s, background 0.2s;
+}
+
+.header-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.header-link.active {
+  color: #fff;
+  background: rgba(240, 122, 31, 0.12);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.header-btn {
+  padding: 0.35rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-jarvis-muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.header-btn:hover {
+  border-color: rgba(240, 122, 31, 0.5);
+  color: #fff;
+}
+
+.header-cta {
+  padding: 0.45rem 1rem;
+  border-radius: 0.6rem;
+  background: var(--color-jarvis-accent);
+  color: #050505;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.2s, transform 0.15s;
+}
+
+.header-cta:hover {
+  background: var(--color-jarvis-glow);
+}
+
+@media (max-width: 640px) {
+  .header-inner {
+    padding: 0.85rem 1rem;
+  }
+
+  .header-nav {
+    gap: 0;
+  }
+
+  .header-link {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.78rem;
+  }
+
+  .header-cta {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .header-btn {
+    display: none;
+  }
+}

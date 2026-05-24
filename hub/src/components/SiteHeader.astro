@@ -5,7 +5,14 @@ interface Props {
   heroHeader?: boolean;
 }
 const { heroHeader = false } = Astro.props;
-const path = Astro.url.pathname;
+const path = Astro.url.pathname.replace(/\/$/, "") || "/";
+
+const nav = [
+  { href: "/", label: "Home", match: (p: string) => p === "/" },
+  { href: "/privacy", label: "Privacy", match: (p: string) => p === "/privacy" },
+  { href: "/terms", label: "Terms", match: (p: string) => p === "/terms" },
+  { href: "/waitlist", label: "Waitlist", match: (p: string) => p === "/waitlist" },
+];
 ---
 
 <header id="site-header" class:list={["site-header", heroHeader && "hero-mode"]}>
@@ -15,16 +22,28 @@ const path = Astro.url.pathname;
       <span>{site.name}</span>
     </a>
 
+    <nav class="header-nav" aria-label="Site">
+      {
+        nav.map((item) => (
+          <a
+            href={item.href}
+            class:list={["header-link", item.match(path) && "active"]}
+            aria-current={item.match(path) ? "page" : undefined}
+          >
+            {item.label}
+          </a>
+        ))
+      }
+    </nav>
+
     <div class="header-right">
-      <a
-        href="/privacy"
-        class:list={[
-          "header-link",
-          path === "/privacy" || path === "/terms" ? "active" : "",
-        ]}
-      >
-        Legal
-      </a>
+      {
+        path !== "/waitlist" ? (
+          <a href="/waitlist" class="header-cta">
+            Join waitlist
+          </a>
+        ) : null
+      }
       {
         site.githubUrl ? (
           <a
