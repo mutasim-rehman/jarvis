@@ -4,6 +4,7 @@ type ConfirmModalProps = {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmVariant?: "default" | "danger";
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -14,6 +15,7 @@ export function ConfirmModal({
   message,
   confirmLabel = "OK",
   cancelLabel = "Cancel",
+  confirmVariant = "default",
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -42,7 +44,13 @@ export function ConfirmModal({
           <button type="button" onClick={onCancel}>
             {cancelLabel}
           </button>
-          <button type="button" className="confirm-primary" onClick={onConfirm}>
+          <button
+            type="button"
+            className={
+              confirmVariant === "danger" ? "confirm-primary confirm-danger" : "confirm-primary"
+            }
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </button>
         </div>

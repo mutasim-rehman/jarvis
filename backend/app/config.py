@@ -52,6 +52,13 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("SUPABASE_JWT_SECRET", "supabase_jwt_secret"),
     )
+    supabase_service_role_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "supabase_service_role_key",
+        ),
+    )
     database_url: str = Field(
         default="",
         validation_alias=AliasChoices("DATABASE_URL", "database_url"),

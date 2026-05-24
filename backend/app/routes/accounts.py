@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from shared.preferences import (
+    AccountDeleteResponse,
     AuthMeResponse,
     DeviceLinkResponse,
     DeviceRegisterRequest,
@@ -28,10 +29,12 @@ from shared.preferences import (
 )
 
 from backend.app.auth.deps import AuthUser, get_current_user_required
+from backend.app.auth.supabase_jwt import delete_supabase_auth_user
 from backend.app.db.repositories import (
     claim_pairing_session,
     create_pairing_session,
     create_task,
+    delete_user_account,
     ensure_profile_and_preferences,
     get_preference_settings,
     list_device_links,
@@ -71,6 +74,16 @@ def auth_me(
         settings=settings,
         onboarding_completed=settings.onboarding_completed,
     )
+
+
+@router.delete("/auth/account", response_model=AccountDeleteResponse)
+def delete_account(
+    user: AuthUser = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    delete_user_account(db, user.user_id)
+    auth_removed = delete_supabase_auth_user(user.user_id)
+    return AccountDeleteResponse(deleted=True, auth_user_removed=auth_removed)
 
 
 @router.get("/users/profile", response_model=ProfileResponse)

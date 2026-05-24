@@ -7,7 +7,7 @@ import string
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from shared.preferences import (
@@ -215,6 +215,16 @@ def create_task(
     session.add(row)
     session.flush()
     return row
+
+
+def delete_user_account(session: Session, user_id: uuid.UUID) -> None:
+    """Delete all Phase 4.5 rows for this user."""
+    session.execute(delete(Task).where(Task.user_id == user_id))
+    session.execute(delete(DeviceLink).where(DeviceLink.user_id == user_id))
+    session.execute(delete(PairingSession).where(PairingSession.user_id == user_id))
+    session.execute(delete(Preference).where(Preference.user_id == user_id))
+    session.execute(delete(Profile).where(Profile.id == user_id))
+    session.flush()
 
 
 def list_tasks_for_device(

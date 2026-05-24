@@ -196,15 +196,173 @@ body {
 }
 
 .onboarding-screen {
-  max-width: 520px;
-  margin: 0 auto;
   width: 100%;
+  max-width: none;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: clamp(1rem, 2.5vw, 2rem);
 }
 
-.onboarding-screen h2 {
+.onboarding-shell {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.onboarding-sidebar {
+  padding-top: 0.25rem;
+}
+
+.onboarding-sidebar .auth-brand h1 {
+  font-size: 1.35rem;
+}
+
+.onboarding-lead {
+  margin: 0 0 1.5rem;
+  color: var(--jarvis-auth-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.onboarding-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.onboarding-step {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: var(--jarvis-auth-muted);
+  font-size: 0.9rem;
+}
+
+.onboarding-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--jarvis-auth-border);
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.onboarding-step-active {
+  color: var(--jarvis-auth-text);
+  border-color: var(--jarvis-auth-border);
+  background: rgba(240, 122, 31, 0.1);
+}
+
+.onboarding-step-active .onboarding-step-num {
+  border-color: var(--jarvis-auth-orange);
+  background: var(--jarvis-auth-orange);
+  color: #050505;
+}
+
+.onboarding-step-done {
+  color: var(--jarvis-auth-text);
+  opacity: 0.75;
+}
+
+.onboarding-panel {
+  max-width: none;
+  width: 100%;
+  min-height: min(520px, calc(100vh - 4rem));
+}
+
+.onboarding-step-content h2 {
   color: var(--jarvis-auth-orange);
-  font-size: 1.05rem;
-  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+.onboarding-hint {
+  margin: 0 0 1rem;
+  color: var(--jarvis-auth-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.onboarding-sliders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem 1.25rem;
+}
+
+.onboarding-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--jarvis-auth-muted);
+}
+
+.onboarding-slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.88rem;
+  color: var(--jarvis-auth-text);
+}
+
+.onboarding-slider-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--jarvis-auth-orange);
+  font-size: 0.8rem;
+}
+
+.onboarding-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--jarvis-auth-orange);
+}
+
+.onboarding-import-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 1.2fr);
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
+
+.onboarding-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.onboarding-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--jarvis-auth-text);
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.onboarding-checkbox input {
+  accent-color: var(--jarvis-auth-orange);
+  width: 1rem;
+  height: 1rem;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
 }
 
 .onboarding-screen button {
@@ -217,6 +375,12 @@ body {
   cursor: pointer;
 }
 
+.onboarding-btn-secondary {
+  background: transparent !important;
+  border: 1px solid var(--jarvis-auth-border) !important;
+  color: var(--jarvis-auth-muted) !important;
+}
+
 .onboarding-screen button:disabled {
   opacity: 0.6;
   cursor: wait;
@@ -224,6 +388,7 @@ body {
 
 .onboarding-screen textarea {
   width: 100%;
+  min-height: 220px;
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
   border-radius: 8px;
@@ -231,17 +396,20 @@ body {
   background: #0a0a0a;
   color: var(--jarvis-auth-text);
   padding: 0.65rem;
+  resize: vertical;
 }
 
-.onboarding-slider {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  width: 100%;
-  color: var(--jarvis-auth-muted);
-  margin-bottom: 0.5rem;
-}
+@media (max-width: 768px) {
+  .onboarding-shell {
+    grid-template-columns: 1fr;
+  }
 
-.onboarding-slider input[type="range"] {
-  accent-color: var(--jarvis-auth-orange);
+  .onboarding-steps {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .onboarding-import-grid {
+    grid-template-columns: 1fr;
+  }
 }

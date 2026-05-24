@@ -311,3 +311,8 @@ class AuthMeResponse(BaseModel):
     profile: ProfileResponse | None = None
     settings: PreferenceSettingsV1
     onboarding_completed: bool
+
+
+class AccountDeleteResponse(BaseModel):
+    deleted: bool
+    auth_user_removed: bool = False

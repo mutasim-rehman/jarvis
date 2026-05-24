@@ -1,4 +1,8 @@
+import { useState } from "react";
 import type { VoiceprintStatus } from "../desktop-api";
+import { useAuth } from "../auth/AuthProvider";
+import { deleteAccount } from "../lib/backendApi";
+import { ConfirmModal } from "./ConfirmModal";
 
 type VoiceprintEnrollState = {
   active: boolean;
@@ -25,6 +29,8 @@ type SettingsPanelProps = {
   onClose: () => void;
 };
 
+const defaultBackend = "http://127.0.0.1:8000";
+
 export function SettingsPanel({
   voiceprintStatus,
   voiceprintEnabled,
@@ -41,6 +47,31 @@ export function SettingsPanel({
   onOpenDevTools,
   onClose,
 }: SettingsPanelProps) {
+  const { me, session, supabaseEnabled, signOut, resolveAccessToken } = useAuth();
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    setAccountBusy(true);
+    setAccountError(null);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        throw new Error("Not signed in.");
+      }
+      await deleteAccount(defaultBackend, token);
+      await signOut();
+      setDeleteConfirmOpen(false);
+      onClose();
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : "Could not delete account");
+      setDeleteConfirmOpen(false);
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
   return (
     <section className="settings-panel">
       <header>
@@ -49,6 +80,27 @@ export function SettingsPanel({
           Close
         </button>
       </header>
+
+      {supabaseEnabled && session ? (
+        <article className="settings-item settings-account-item">
+          <strong>Account</strong>
+          <p>{me?.email ?? session.user.email ?? "Signed in"}</p>
+          {accountError ? <p className="settings-account-error">{accountError}</p> : null}
+          <div className="settings-account-actions">
+            <button type="button" disabled={accountBusy} onClick={() => void signOut()}>
+              Sign out
+            </button>
+            <button
+              type="button"
+              className="settings-danger-btn"
+              disabled={accountBusy}
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              Delete account
+            </button>
+          </div>
+        </article>
+      ) : null}
 
       <article className="settings-item settings-dev-item">
         <strong>Developer</strong>
@@ -146,6 +198,19 @@ export function SettingsPanel({
           </button>
         </div>
       </article>
+
+      <ConfirmModal
+        open={deleteConfirmOpen}
+        title="Delete account"
+        message="This permanently deletes your preferences, personality profile, device links, and tasks. This cannot be undone."
+        confirmLabel={accountBusy ? "Deleting…" : "Delete account"}
+        cancelLabel="Cancel"
+        confirmVariant="danger"
+        onConfirm={() => void handleDeleteAccount()}
+        onCancel={() => {
+          if (!accountBusy) setDeleteConfirmOpen(false);
+        }}
+      />
     </section>
   );
 }

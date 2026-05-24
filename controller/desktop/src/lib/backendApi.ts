@@ -91,6 +91,26 @@ export async function fetchPersonalityTemplate(
   return response.json();
 }
 
+export type AccountDeleteResult = {
+  deleted: boolean;
+  auth_user_removed: boolean;
+};
+
+export async function deleteAccount(
+  baseUrl: string,
+  accessToken: string,
+): Promise<AccountDeleteResult> {
+  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/auth/account`, {
+    method: "DELETE",
+    headers: apiHeaders(accessToken),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`account delete failed: ${response.status} ${text}`);
+  }
+  return response.json() as Promise<AccountDeleteResult>;
+}
+
 export async function registerDevice(
   baseUrl: string,
   accessToken: string,

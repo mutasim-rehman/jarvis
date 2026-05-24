@@ -89,3 +89,28 @@ def user_from_supabase_auth_api(token: str) -> SupabaseTokenClaims | None:
         email=str(email) if email else None,
         role="authenticated",
     )
+
+
+def delete_supabase_auth_user(user_id: uuid.UUID) -> bool:
+    """Remove auth.users row via Admin API (requires SUPABASE_SERVICE_ROLE_KEY)."""
+    base = settings.resolved_supabase_url()
+    key = (settings.supabase_service_role_key or "").strip()
+    if not base or not key:
+        return False
+    url = f"{base}/auth/v1/admin/users/{user_id}"
+    try:
+        response = httpx.delete(
+            url,
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+            },
+            timeout=15.0,
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("Supabase admin user delete failed: %s", exc)
+        return False
+    if response.status_code not in (200, 204):
+        logger.warning("Supabase admin user delete status=%s", response.status_code)
+        return False
+    return True

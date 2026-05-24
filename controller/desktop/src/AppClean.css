@@ -581,6 +581,35 @@ button.voiceprint-toggle-on:hover {
   flex-wrap: wrap;
 }
 
+.settings-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.settings-account-error {
+  margin: 8px 0 0 !important;
+  color: rgba(255, 140, 120, 0.95) !important;
+}
+
+button.settings-danger-btn {
+  background: rgba(90, 28, 32, 0.65);
+  border-color: rgba(200, 70, 80, 0.45);
+  color: rgba(255, 210, 210, 0.95);
+}
+
+button.settings-danger-btn:hover:not(:disabled) {
+  background: rgba(120, 35, 42, 0.8);
+  border-color: rgba(230, 90, 100, 0.55);
+}
+
+button.confirm-danger {
+  background: rgba(120, 35, 42, 0.85) !important;
+  border-color: rgba(230, 90, 100, 0.55) !important;
+  color: rgba(255, 230, 230, 0.98) !important;
+}
+
 .terminals-panel header {
   display: flex;
   justify-content: space-between;
