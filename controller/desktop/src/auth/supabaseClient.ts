@@ -67,6 +67,32 @@ export async function completeOAuthFromUrl(
   );
 }
 
+async function waitForOAuthCallback(
+  onCallback: (callbackUrl: string) => Promise<void>,
+): Promise<void> {
+  const api = window.desktopApi;
+  if (!api?.onOAuthCallback || !api.startOAuthListener) {
+    throw new Error("OAuth callback listener is not available");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      reject(new Error("Sign-in timed out. Close the browser tab and try again."));
+    }, 5 * 60 * 1000);
+
+    const unsubscribe = api.onOAuthCallback(async (callbackUrl) => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+      try {
+        await onCallback(callbackUrl);
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
 async function signInWithProviderExternal(provider: "google" | "github"): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) {
@@ -87,45 +113,47 @@ async function signInWithProviderExternal(provider: "google" | "github"): Promis
     throw new Error("No OAuth URL returned from Supabase");
   }
 
-  // Electron window captures ?code= and #access_token= (system browser cannot send hash to localhost).
-  if (window.desktopApi?.openOAuthWindow) {
-    const result = await window.desktopApi.openOAuthWindow(data.url);
+  const api = window.desktopApi;
+  if (!api) {
+    throw new Error("Desktop API unavailable");
+  }
+
+  const finish = (callbackUrl: string) => completeOAuthFromUrl(supabase, callbackUrl);
+
+  // Prefer system browser — Google/GitHub often block embedded Electron windows.
+  if (api.openExternalUrl && api.startOAuthListener && api.onOAuthCallback) {
+    try {
+      const started = await api.startOAuthListener();
+      if (!started.ok) {
+        throw new Error(started.error || "Could not start OAuth callback listener");
+      }
+
+      const opened = await api.openExternalUrl(data.url);
+      if (!opened.ok) {
+        throw new Error(opened.error || "Could not open system browser");
+      }
+
+      await waitForOAuthCallback(finish);
+      return;
+    } catch (browserErr) {
+      if (!api.openOAuthWindow) {
+        throw browserErr;
+      }
+      console.warn("[auth] System browser OAuth failed, trying embedded window:", browserErr);
+    }
+  }
+
+  // Fallback: dedicated Electron sign-in window
+  if (api.openOAuthWindow) {
+    const result = await api.openOAuthWindow(data.url);
     if (!result.ok || !result.callbackUrl) {
       throw new Error(result.error || "Sign-in window closed before completing");
     }
-    await completeOAuthFromUrl(supabase, result.callbackUrl);
+    await finish(result.callbackUrl);
     return;
   }
 
-  // Fallback: system browser + loopback (PKCE query ?code= only).
-  const listenerReady = new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      reject(new Error("Sign-in timed out. Close the browser tab and try again."));
-    }, 5 * 60 * 1000);
-
-    const unsubscribe = window.desktopApi.onOAuthCallback(async (callbackUrl) => {
-      window.clearTimeout(timeout);
-      unsubscribe();
-      try {
-        await completeOAuthFromUrl(supabase, callbackUrl);
-        resolve();
-      } catch (err) {
-        reject(err);
-      }
-    });
-  });
-
-  const started = await window.desktopApi.startOAuthListener();
-  if (!started.ok) {
-    throw new Error(started.error || "Could not start OAuth callback listener");
-  }
-
-  const opened = await window.desktopApi.openExternalUrl(data.url);
-  if (!opened.ok) {
-    throw new Error(opened.error || "Could not open system browser");
-  }
-
-  await listenerReady;
+  throw new Error("OAuth is not available in this environment");
 }
 
 async function signInWithProviderInApp(provider: "google" | "github"): Promise<void> {
@@ -134,13 +162,17 @@ async function signInWithProviderInApp(provider: "google" | "github"): Promise<v
     throw new Error("Supabase is not configured");
   }
   const redirectTo = `${window.location.origin}/auth/callback`;
-  const { error } = await supabase.auth.signInWithOAuth({
+  const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
-    options: { redirectTo },
+    options: { redirectTo, skipBrowserRedirect: true },
   });
   if (error) {
     throw error;
   }
+  if (!data?.url) {
+    throw new Error("No OAuth URL returned from Supabase");
+  }
+  window.location.assign(data.url);
 }
 
 export async function signInWithGoogle(): Promise<void> {

@@ -47,7 +47,7 @@ export function SignInScreen() {
 
   const label = (provider: OAuthProvider, defaultText: string) => {
     if (busyProvider === provider) {
-      return "Opening sign-in window…";
+      return "Opening browser…";
     }
     return defaultText;
   };
@@ -62,7 +62,8 @@ export function SignInScreen() {
           <h1>Sign in to JARVIS</h1>
         </div>
         <p className="auth-subtitle">
-          One account for desktop, hub, and mobile. A sign-in window will open for Google or GitHub.
+          One account for desktop, hub, and mobile. Your default browser will open to sign in with
+          Google or GitHub.
         </p>
         <div className="auth-actions">
           <button

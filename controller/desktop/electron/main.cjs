@@ -835,8 +835,13 @@ ipcMain.handle("auth:open-external-url", async (_event, url) => {
   if (!url || typeof url !== "string") {
     return { ok: false, error: "Missing URL" };
   }
-  await shell.openExternal(url);
-  return { ok: true };
+  try {
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not open system browser";
+    return { ok: false, error: message };
+  }
 });
 
 function closeOAuthWindow() {
@@ -873,14 +878,29 @@ function openOAuthSignInWindow(oauthUrl) {
     oauthWindow = new BrowserWindow({
       width: 520,
       height: 760,
-      show: true,
+      show: false,
       autoHideMenuBar: true,
       title: "Sign in to JARVIS",
       backgroundColor: "#050505",
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
       },
+    });
+
+    oauthWindow.webContents.setWindowOpenHandler(({ url: target }) => {
+      if (target) {
+        void shell.openExternal(target);
+      }
+      return { action: "deny" };
+    });
+
+    oauthWindow.once("ready-to-show", () => {
+      if (oauthWindow && !oauthWindow.isDestroyed()) {
+        oauthWindow.show();
+        oauthWindow.focus();
+      }
     });
 
     oauthWindow.webContents.on("will-redirect", (_event, targetUrl) => handleNavigation(targetUrl));
