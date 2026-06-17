@@ -10,8 +10,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 
 from shared.schema import (
     ActionCommand,
@@ -61,6 +62,21 @@ logger = logging.getLogger(__name__)
 
 _stt_ready: bool = False
 _tts_ready: bool = False
+
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error_handler(_request: Request, exc: SQLAlchemyError):
+    logger.exception("Database error")
+    message = str(exc.orig) if getattr(exc, "orig", None) else str(exc)
+    hint = (
+        "Check DATABASE_URL in .env. If using Supabase direct host (db.<project>.supabase.co), "
+        "try the Session pooler connection string from Supabase → Database → Connect instead."
+    )
+    if "failed to resolve host" in message.lower() or "getaddrinfo" in message.lower():
+        detail = f"Database host could not be reached. {hint}"
+    else:
+        detail = f"Database unavailable: {message}. {hint}"
+    return JSONResponse(status_code=503, content={"detail": detail})
 
 
 def _log_executor_task_result(task: asyncio.Task) -> None:
@@ -125,6 +141,7 @@ async def health_check():
         "schema_version": SCHEMA_VERSION,
         "stt_ready": _stt_ready,
         "tts_ready": _tts_ready,
+        "accounts_api": "unified",
     }
 
 

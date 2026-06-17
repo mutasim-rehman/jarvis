@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("desktopApi", {
       ipcRenderer.removeListener("auth:oauth-callback", listener);
     };
   },
+  fetchBackend: (options) => ipcRenderer.invoke("backend:fetch", options),
   interactWithBackend: (text, baseUrl, chatProvider, accessToken) =>
     ipcRenderer.invoke("backend:interact", text, baseUrl, chatProvider, accessToken),
   transcribeAudio: (wavBytes, baseUrl) => ipcRenderer.invoke("backend:transcribe", wavBytes, baseUrl),

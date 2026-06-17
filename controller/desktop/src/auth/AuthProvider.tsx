@@ -24,6 +24,7 @@ import { getSupabase } from "./supabaseClient";
 
 type AuthContextValue = {
   loading: boolean;
+  backendConnecting: boolean;
   session: Session | null;
   accessToken: string | null;
   me: AuthMeResponse | null;
@@ -40,6 +41,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(isSupabaseConfigured());
+  const [backendConnecting, setBackendConnecting] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [me, setMe] = useState<AuthMeResponse | null>(null);
   const [backendAuthError, setBackendAuthError] = useState<string | null>(null);
@@ -95,9 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token) {
       setMe(null);
       setBackendAuthError(null);
+      setBackendConnecting(false);
       return;
     }
     let resolvedBase = baseUrl ?? (await resolveBackendBaseUrl());
+    setBackendConnecting(true);
     try {
       resolvedBase = await ensureBackendRunning();
       const data = await fetchAuthMe(resolvedBase, token);
@@ -111,6 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setMe(null);
       setBackendAuthError(formatBackendError(err, resolvedBase));
+    } finally {
+      setBackendConnecting(false);
     }
   }, [resolveAccessToken]);
 
@@ -164,6 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       loading,
+      backendConnecting,
       session,
       accessToken: session?.access_token ?? null,
       me,
@@ -177,6 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       loading,
+      backendConnecting,
       session,
       me,
       backendAuthError,

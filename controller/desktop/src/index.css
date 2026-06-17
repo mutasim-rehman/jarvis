@@ -93,6 +93,14 @@ body {
   line-height: 1.5;
 }
 
+.auth-hint {
+  margin: -0.75rem 0 0;
+  color: var(--jarvis-auth-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
 .auth-actions {
   display: flex;
   flex-direction: column;
@@ -155,6 +163,17 @@ body {
   border-radius: 10px;
   border: 1px solid rgba(240, 122, 31, 0.35);
   background: rgba(240, 122, 31, 0.08);
+}
+
+.onboarding-error-panel {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(240, 122, 31, 0.35);
+  background: rgba(240, 122, 31, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .auth-error-actions {

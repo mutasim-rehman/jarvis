@@ -1,5 +1,6 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const net = require("node:net");
 const { spawn, execSync } = require("node:child_process");
 const os = require("node:os");
@@ -215,6 +216,8 @@ const serviceConfigs = {
 
 /** @type {Map<string, {child: import("node:child_process").ChildProcess, startedAt: number}>} */
 const runningProcesses = new Map();
+/** @type {Set<string>} */
+const externalServices = new Set();
 /** @type {Map<string, string[]>} */
 const serviceLogs = new Map();
 /** @type {Map<string, {args: string[], healthUrl?: string, baseUrl?: string}>} */
@@ -287,6 +290,121 @@ async function findAvailablePort(preferredPort, host, maxOffset = 25) {
   return null;
 }
 
+function isBackendHealthData(data) {
+  return Boolean(data && typeof data === "object" && "stt_ready" in data);
+}
+
+function isManagedBackendHealth(data) {
+  return isBackendHealthData(data) && data.accounts_api === "unified";
+}
+
+function isExecutorHealthData(data) {
+  return Boolean(
+    data &&
+      typeof data === "object" &&
+      data.status === "ok" &&
+      !("stt_ready" in data),
+  );
+}
+
+async function fetchHealthAt(baseUrl) {
+  try {
+    const response = await fetch(`${String(baseUrl).replace(/\/+$/, "")}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function discoverBackendBaseUrl(preferredPort = 8000, maxOffset = 25) {
+  for (let offset = 0; offset <= maxOffset; offset += 1) {
+    const port = preferredPort + offset;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const data = await fetchHealthAt(baseUrl);
+    if (isManagedBackendHealth(data)) {
+      return { port, baseUrl, data };
+    }
+  }
+  return null;
+}
+
+async function discoverExecutorBaseUrl(preferredPort = 8001, maxOffset = 25) {
+  for (let offset = 0; offset <= maxOffset; offset += 1) {
+    const port = preferredPort + offset;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const data = await fetchHealthAt(baseUrl);
+    if (isExecutorHealthData(data)) {
+      return { port, baseUrl, data };
+    }
+  }
+  return null;
+}
+
+async function resolvePortForService(serviceId, preferredPort, host) {
+  const maxOffset = 25;
+  for (let offset = 0; offset <= maxOffset; offset += 1) {
+    const candidate = preferredPort + offset;
+    const baseUrl = `http://${host}:${candidate}`;
+    const isAvailable = await checkPortAvailable(candidate, host);
+    if (!isAvailable) {
+      const data = await fetchHealthAt(baseUrl);
+      if (serviceId === "backend" && isManagedBackendHealth(data)) {
+        return { port: candidate, external: true };
+      }
+      if (serviceId === "executor" && isExecutorHealthData(data)) {
+        return { port: candidate, external: true };
+      }
+      continue;
+    }
+    return { port: candidate, external: false };
+  }
+  return null;
+}
+
+function loadRepoDotEnv() {
+  /** @type {Record<string, string>} */
+  const parsed = {};
+  const envPath = path.join(repoRoot, ".env");
+  try {
+    const content = fsSync.readFileSync(envPath, "utf8");
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) {
+        continue;
+      }
+      const eq = line.indexOf("=");
+      if (eq <= 0) {
+        continue;
+      }
+      const key = line.slice(0, eq).trim();
+      let value = line.slice(eq + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      parsed[key] = value;
+    }
+  } catch {
+    // optional
+  }
+  return parsed;
+}
+
+function serviceEnv(config) {
+  return {
+    ...process.env,
+    ...loadRepoDotEnv(),
+    ...config.env,
+  };
+}
+
 function parseTerminalMetadata(content) {
   const lines = content.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim() === "---");
@@ -335,15 +453,16 @@ function serviceStatus(serviceId) {
   const config = serviceConfigs[serviceId];
   const runtime = serviceRuntime.get(serviceId);
   const processEntry = runningProcesses.get(serviceId);
-  const isRunning = !!(processEntry && !processEntry.child.killed);
+  const isRunning =
+    externalServices.has(serviceId) || !!(processEntry && !processEntry.child.killed);
   const activeConfig = runtime ? { ...config, ...runtime } : config;
   return {
     id: config.id,
     name: config.name,
     command: commandText(activeConfig),
     running: isRunning,
-    pid: isRunning ? processEntry.child.pid ?? null : null,
-    startedAt: isRunning ? processEntry.startedAt : null,
+    pid: processEntry && !processEntry.child.killed ? processEntry.child.pid ?? null : null,
+    startedAt: processEntry?.startedAt ?? null,
     logs: serviceLogs.get(serviceId) ?? [],
   };
 }
@@ -390,21 +509,24 @@ async function resolveRuntimeForService(serviceId) {
   }
 
   const host = config.healthUrl.includes("127.0.0.1") ? "127.0.0.1" : "0.0.0.0";
-  const selectedPort = await findAvailablePort(preferredPort, host);
-  if (!selectedPort) {
+  const resolved = await resolvePortForService(serviceId, preferredPort, host);
+  if (!resolved) {
     throw new Error(`${config.name}: unable to find available port near ${preferredPort}`);
   }
 
   const runtime = {
-    args: withPortArgs(config.args, selectedPort),
-    healthUrl: config.healthUrl.replace(/:\d+/, `:${selectedPort}`),
-    baseUrl: `http://${host}:${selectedPort}`,
+    args: withPortArgs(config.args, resolved.port),
+    healthUrl: `http://${host}:${resolved.port}/health`,
+    baseUrl: `http://${host}:${resolved.port}`,
+    external: resolved.external,
   };
   serviceRuntime.set(serviceId, runtime);
-  if (selectedPort !== preferredPort) {
+  if (resolved.external) {
+    appendLog(serviceId, `[external] reusing ${config.name} at ${runtime.baseUrl}`);
+  } else if (resolved.port !== preferredPort) {
     appendLog(
       serviceId,
-      `[port-fallback] preferred ${preferredPort} busy, using ${selectedPort}`
+      `[port-fallback] preferred ${preferredPort} busy, using ${resolved.port}`,
     );
   }
   return runtime;
@@ -419,12 +541,14 @@ async function startService(serviceId) {
 
   syncServicePythonCommands();
   const runtime = await resolveRuntimeForService(serviceId);
+  if (runtime.external) {
+    externalServices.add(serviceId);
+    return serviceStatus(serviceId);
+  }
+  externalServices.delete(serviceId);
   const child = spawn(config.command, runtime.args, {
     cwd: repoRoot,
-    env: {
-      ...process.env,
-      ...config.env,
-    },
+    env: serviceEnv(config),
     windowsHide: true,
     shell: false,
   });
@@ -436,6 +560,11 @@ async function startService(serviceId) {
 }
 
 function stopService(serviceId) {
+  if (externalServices.has(serviceId)) {
+    externalServices.delete(serviceId);
+    appendLog(serviceId, "[stop] detached from external service");
+    return serviceStatus(serviceId);
+  }
   const current = runningProcesses.get(serviceId);
   if (!current || current.child.killed) {
     return serviceStatus(serviceId);
@@ -470,6 +599,20 @@ async function checkHealth(serviceId) {
       return { ok: false, status: response.status, error: response.statusText };
     }
     const data = await response.json();
+    if (serviceId === "backend" && !isManagedBackendHealth(data)) {
+      return {
+        ok: false,
+        status: response.status,
+        error: "Health response is not from a managed Backend API (missing accounts_api=unified)",
+      };
+    }
+    if (serviceId === "executor" && !isExecutorHealthData(data)) {
+      return {
+        ok: false,
+        status: response.status,
+        error: "Health response is not from Executor API",
+      };
+    }
     return { ok: true, status: response.status, data };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -508,6 +651,52 @@ function buildBackendHeaders(extra = {}) {
     headers["X-Device-Id"] = authDeviceId;
   }
   return headers;
+}
+
+async function fetchBackendRequest({
+  method = "GET",
+  path,
+  baseUrl,
+  accessToken,
+  deviceId,
+  body,
+  timeoutMs = 30000,
+}) {
+  if (accessToken) {
+    authAccessToken = accessToken;
+  }
+  if (deviceId) {
+    authDeviceId = deviceId;
+  }
+  const url = `${String(baseUrl).replace(/\/+$/, "")}${path}`;
+  const init = {
+    method,
+    headers: buildBackendHeaders({ "Content-Type": "application/json" }),
+    signal: AbortSignal.timeout(timeoutMs),
+  };
+  if (body !== undefined && body !== null && method !== "GET" && method !== "HEAD") {
+    init.body = typeof body === "string" ? body : JSON.stringify(body);
+  }
+  const response = await fetch(url, init);
+  const text = await response.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+  if (!response.ok) {
+    const detail =
+      typeof data === "object" && data && "detail" in data
+        ? String(data.detail)
+        : typeof data === "string"
+          ? data
+          : text;
+    throw new Error(`${path} failed: ${response.status}${detail ? ` ${detail}` : ""}`);
+  }
+  return { status: response.status, data };
 }
 
 async function callInteract(text, baseUrl, chatProvider, accessToken) {
@@ -735,6 +924,16 @@ app.whenReady().then(async () => {
   try {
     await startService("backend");
     await startService("executor");
+    const backendHealthError = await waitForHealthyApi("backend", 90000);
+    if (backendHealthError) {
+      console.error(`[electron] ${backendHealthError}`);
+      appendLog("backend", `[auto-start] ${backendHealthError}`);
+    }
+    const executorHealthError = await waitForHealthyApi("executor", 60000);
+    if (executorHealthError) {
+      console.error(`[electron] ${executorHealthError}`);
+      appendLog("executor", `[auto-start] ${executorHealthError}`);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[electron] auto-start backend/executor failed: ${message}`);
@@ -761,11 +960,29 @@ app.on("before-quit", () => {
   }
 });
 
-function getServiceBaseUrl(serviceId) {
+async function getServiceBaseUrl(serviceId) {
   const config = serviceConfigs[serviceId];
   const runtime = serviceRuntime.get(serviceId);
   if (runtime?.baseUrl) {
-    return runtime.baseUrl;
+    const data = await fetchHealthAt(runtime.baseUrl);
+    if (serviceId === "backend" && isManagedBackendHealth(data)) {
+      return runtime.baseUrl;
+    }
+    if (serviceId === "executor" && isExecutorHealthData(data)) {
+      return runtime.baseUrl;
+    }
+  }
+  if (serviceId === "backend") {
+    const discovered = await discoverBackendBaseUrl(8000);
+    if (discovered && isManagedBackendHealth(discovered.data)) {
+      return discovered.baseUrl;
+    }
+  }
+  if (serviceId === "executor") {
+    const discovered = await discoverExecutorBaseUrl(8001);
+    if (discovered) {
+      return discovered.baseUrl;
+    }
   }
   const preferredPort = parsePortFromArgs(config.args);
   if (!preferredPort) {
@@ -935,6 +1152,15 @@ ipcMain.handle("auth:open-oauth-window", async (_event, oauthUrl) => {
   }
 });
 
+ipcMain.handle("backend:fetch", async (_event, options) => {
+  try {
+    const result = await fetchBackendRequest(options);
+    return { ok: true, ...result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, status: 0, error: message };
+  }
+});
 ipcMain.handle("backend:interact", async (_event, text, baseUrl, chatProvider, accessToken) => {
   try {
     const data = await callInteract(text, baseUrl, chatProvider, accessToken);

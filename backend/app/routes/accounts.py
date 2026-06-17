@@ -36,16 +36,17 @@ from backend.app.db.repositories import (
     create_pairing_session,
     create_task,
     delete_user_account,
-    ensure_profile_and_preferences,
-    get_preference_settings,
     list_device_links,
     list_tasks_for_device,
-    patch_preference_settings,
-    register_device,
-    set_personality_profile,
-    update_profile,
 )
 from backend.app.db.session import get_db
+from backend.app.db.unified import (
+    ensure_profile_and_preferences_for_user,
+    patch_preference_settings_for_user,
+    register_device_for_user,
+    set_personality_profile_for_user,
+    update_profile_for_user,
+)
 from backend.app.email.welcome import maybe_send_welcome_email
 
 router = APIRouter(tags=["accounts"])
@@ -61,9 +62,8 @@ def _iso(dt: datetime | None) -> str | None:
 @router.get("/auth/me", response_model=AuthMeResponse)
 def auth_me(
     user: AuthUser = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    profile, pref = ensure_profile_and_preferences(db, user.user_id)
+    profile, pref = ensure_profile_and_preferences_for_user(user.user_id)
     settings = PreferenceSettingsV1.model_validate(pref.settings or {})
     return AuthMeResponse(
         user_id=user.user_id,
@@ -92,9 +92,8 @@ def delete_account(
 @router.get("/users/profile", response_model=ProfileResponse)
 def get_profile(
     user: AuthUser = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    profile, _ = ensure_profile_and_preferences(db, user.user_id)
+    profile, _ = ensure_profile_and_preferences_for_user(user.user_id)
     return ProfileResponse(
         id=profile.id,
         display_name=profile.display_name,
@@ -107,10 +106,8 @@ def get_profile(
 def patch_profile(
     body: ProfileUpdate,
     user: AuthUser = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    profile = update_profile(
-        db,
+    profile = update_profile_for_user(
         user.user_id,
         display_name=body.display_name,
         avatar_url=body.avatar_url,
@@ -126,9 +123,8 @@ def patch_profile(
 @router.get("/preferences", response_model=PreferencesResponse)
 def get_preferences(
     user: AuthUser = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    _, pref = ensure_profile_and_preferences(db, user.user_id)
+    _, pref = ensure_profile_and_preferences_for_user(user.user_id)
     settings = PreferenceSettingsV1.model_validate(pref.settings or {})
     return PreferencesResponse(
         user_id=user.user_id,
@@ -141,12 +137,11 @@ def get_preferences(
 def patch_preferences(
     body: PreferencesPatch,
     user: AuthUser = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    profile, pref = ensure_profile_and_preferences(db, user.user_id)
+    profile, pref = ensure_profile_and_preferences_for_user(user.user_id)
     old_settings = PreferenceSettingsV1.model_validate(pref.settings or {})
     patch = body.to_settings_patch()
-    settings = patch_preference_settings(db, user.user_id, patch)
+    settings = patch_preference_settings_for_user(user.user_id, patch)
 
     completing_onboarding = (
         body.onboarding_completed is True
@@ -156,15 +151,14 @@ def patch_preferences(
     if completing_onboarding and user.email:
         try:
             if maybe_send_welcome_email(to_email=user.email, display_name=profile.display_name):
-                settings = patch_preference_settings(
-                    db,
+                settings = patch_preference_settings_for_user(
                     user.user_id,
                     {"welcome_email_sent": True},
                 )
         except Exception:
             logger.exception("Welcome email failed for user_id=%s", user.user_id)
 
-    _, pref = ensure_profile_and_preferences(db, user.user_id)
+    _, pref = ensure_profile_and_preferences_for_user(user.user_id)
     return PreferencesResponse(
         user_id=user.user_id,
         settings=settings,
@@ -181,10 +175,9 @@ def personality_template():
 def import_personality(
     body: PersonalityProfileV1,
     user: AuthUser = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    settings = set_personality_profile(db, user.user_id, body.model_dump())
-    _, pref = ensure_profile_and_preferences(db, user.user_id)
+    settings = set_personality_profile_for_user(user.user_id, body.model_dump())
+    _, pref = ensure_profile_and_preferences_for_user(user.user_id)
     return PreferencesResponse(
         user_id=user.user_id,
         settings=settings,
@@ -196,16 +189,14 @@ def import_personality(
 def devices_register(
     body: DeviceRegisterRequest,
     user: AuthUser = Depends(get_current_user_required),
-    db: Session = Depends(get_db),
 ):
-    settings = register_device(
-        db,
+    settings = register_device_for_user(
         user.user_id,
         body.device_id,
         body.device_type,
         body.label,
     )
-    _, pref = ensure_profile_and_preferences(db, user.user_id)
+    _, pref = ensure_profile_and_preferences_for_user(user.user_id)
     return PreferencesResponse(
         user_id=user.user_id,
         settings=settings,

@@ -2,12 +2,26 @@ const DEFAULT_BACKEND = "http://127.0.0.1:8000";
 
 export function formatBackendError(err: unknown, baseUrl: string): string {
   const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("404") && msg.includes("/auth/me")) {
+    return `Backend API was not found at ${baseUrl} (got 404). The app may have connected to the Executor by mistake — restart the desktop app so it can find the correct port.`;
+  }
+  if (
+    msg.includes("503") ||
+    msg.toLowerCase().includes("database") ||
+    msg.toLowerCase().includes("getaddrinfo") ||
+    msg.toLowerCase().includes("failed to resolve host")
+  ) {
+    return `Cannot reach the database for account setup. In Supabase → Project Settings → Database, copy the Session pooler URI (port 5432) into DATABASE_URL in your repo .env, then restart the app. (${msg})`;
+  }
+  if (msg.includes("500") && msg.includes("/auth/me")) {
+    return `Account lookup failed (500). This usually means an old Backend API is still running on port 8000. Stop all Python/uvicorn processes, restart the desktop app (npm run dev), then try again. (${msg})`;
+  }
   if (
     msg === "Failed to fetch" ||
     msg.includes("NetworkError") ||
     msg.toLowerCase().includes("failed to fetch")
   ) {
-    return `Cannot reach the backend at ${baseUrl}. The Backend API may not be running — it starts automatically when you finish this step, or you can start it from the main app status bar.`;
+    return `Cannot reach the backend at ${baseUrl}. JARVIS is starting the Backend API automatically — this can take up to a minute on first launch. If the problem persists, restart the app and ensure Python dependencies are installed (see controller/desktop/README.md).`;
   }
   return msg;
 }
@@ -21,7 +35,7 @@ export async function resolveBackendBaseUrl(): Promise<string> {
 }
 
 /** Start backend via Electron if needed and wait until /health responds. */
-export async function ensureBackendRunning(maxWaitMs = 45000): Promise<string> {
+export async function ensureBackendRunning(maxWaitMs = 90000): Promise<string> {
   const baseUrl = await resolveBackendBaseUrl();
   const api = typeof window !== "undefined" ? window.desktopApi : undefined;
   if (!api?.checkServiceHealth || !api.startService) {
@@ -34,7 +48,7 @@ export async function ensureBackendRunning(maxWaitMs = 45000): Promise<string> {
   while (Date.now() < deadline) {
     const health = await api.checkServiceHealth("backend");
     if (health.ok) {
-      return baseUrl;
+      return await resolveBackendBaseUrl();
     }
     if (!startAttempted) {
       startAttempted = true;

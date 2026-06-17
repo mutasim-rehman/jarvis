@@ -9,7 +9,7 @@
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_ANON_KEY` | Public anon key (optional on backend) |
 | `SUPABASE_JWT_SECRET` | JWT secret from **Project Settings → API** (verify Bearer tokens) |
-| `DATABASE_URL` | Postgres URI (`postgresql+psycopg://...` pooler or direct) |
+| `DATABASE_URL` | Postgres URI — prefer **Session pooler** (`postgresql://...@aws-0-...pooler.supabase.com:5432/postgres`) if direct `db.<project>.supabase.co` fails on your network |
 | `API_AUTH_MODE` | `optional` (default) or `required` for account routes |
 
 ### Desktop (`controller/desktop/.env` or Vite env)
@@ -78,7 +78,27 @@ Google/GitHub OAuth apps here are **login only**. Executor Gmail/Spotify OAuth (
 
 ## Signup trigger
 
-On `auth.users` insert, create `profiles` and `preferences` rows (see Phase 4.5 plan SQL in Supabase SQL Editor if not already applied).
+On `auth.users` insert, create `profiles` and `preferences` rows.
+
+**Run in Supabase Dashboard → SQL Editor** (full script, safe to re-run):
+
+[`docs/supabase/phase-4.5-schema.sql`](supabase/phase-4.5-schema.sql)
+
+That file creates tables (if missing), the signup trigger, **backfills existing users** who signed up before the trigger existed, and RLS policies.
+
+Quick check after running (replace email):
+
+```sql
+select u.id, u.email,
+       p.id is not null as has_profile,
+       pref.user_id is not null as has_preferences
+from auth.users u
+left join public.profiles p on p.id = u.id
+left join public.preferences pref on pref.user_id = u.id
+where u.email = 'your-email@example.com';
+```
+
+Both `has_profile` and `has_preferences` should be `true`.
 
 ## API routes (authenticated)
 

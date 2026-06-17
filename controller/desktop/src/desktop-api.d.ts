@@ -70,6 +70,22 @@ export interface VoiceprintVerifyResult {
   enabled: boolean;
 }
 
+export interface BackendFetchResult {
+  ok: boolean;
+  status: number;
+  data?: unknown;
+  error?: string;
+}
+
+export interface BackendFetchOptions {
+  method?: string;
+  path: string;
+  baseUrl: string;
+  accessToken?: string | null;
+  deviceId?: string | null;
+  body?: unknown;
+}
+
 interface DesktopApi {
   listServices: () => Promise<ServiceStatus[]>;
   startService: (serviceId: ServiceId) => Promise<ServiceStatus>;
@@ -88,6 +104,7 @@ interface DesktopApi {
     oauthUrl: string,
   ) => Promise<{ ok: true; callbackUrl: string } | { ok: false; error: string }>;
   onOAuthCallback: (callback: (callbackUrl: string) => void) => () => void;
+  fetchBackend: (options: BackendFetchOptions) => Promise<BackendFetchResult>;
   interactWithBackend: (
     text: string,
     baseUrl: string,

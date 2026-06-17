@@ -32,17 +32,49 @@ function apiHeaders(accessToken: string | null): Record<string, string> {
   return headers;
 }
 
+async function requestBackend<T>(
+  baseUrl: string,
+  path: string,
+  accessToken: string | null,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const api = typeof window !== "undefined" ? window.desktopApi : undefined;
+  if (api?.fetchBackend) {
+    const result = await api.fetchBackend({
+      method: init.method ?? "GET",
+      path,
+      baseUrl,
+      accessToken,
+      deviceId: getOrCreateDeviceId(),
+      body: init.body,
+    });
+    if (!result.ok) {
+      const err = new Error(result.error || `${path} failed: ${result.status}`);
+      throw err;
+    }
+    return result.data as T;
+  }
+
+  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}${path}`, {
+    method: init.method ?? "GET",
+    headers: apiHeaders(accessToken),
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`${path} failed: ${response.status} ${text}`);
+  }
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return response.json() as Promise<T>;
+}
+
 export async function fetchAuthMe(
   baseUrl: string,
   accessToken: string,
 ): Promise<AuthMeResponse> {
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/auth/me`, {
-    headers: apiHeaders(accessToken),
-  });
-  if (!response.ok) {
-    throw new Error(`auth/me failed: ${response.status}`);
-  }
-  return response.json() as Promise<AuthMeResponse>;
+  return requestBackend<AuthMeResponse>(baseUrl, "/auth/me", accessToken);
 }
 
 export async function patchPreferences(
@@ -50,15 +82,10 @@ export async function patchPreferences(
   accessToken: string,
   body: Record<string, unknown>,
 ): Promise<void> {
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/preferences`, {
+  await requestBackend<void>(baseUrl, "/preferences", accessToken, {
     method: "PATCH",
-    headers: apiHeaders(accessToken),
-    body: JSON.stringify(body),
+    body,
   });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`preferences patch failed: ${response.status} ${text}`);
-  }
 }
 
 export async function importPersonality(
@@ -66,29 +93,21 @@ export async function importPersonality(
   accessToken: string,
   document: unknown,
 ): Promise<void> {
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/preferences/personality`, {
+  await requestBackend<void>(baseUrl, "/preferences/personality", accessToken, {
     method: "POST",
-    headers: apiHeaders(accessToken),
-    body: JSON.stringify(document),
+    body: document,
   });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`personality import failed: ${response.status} ${text}`);
-  }
 }
 
 export async function fetchPersonalityTemplate(
   baseUrl: string,
   accessToken: string,
 ): Promise<unknown> {
-  const response = await fetch(
-    `${baseUrl.replace(/\/+$/, "")}/preferences/personality/template`,
-    { headers: apiHeaders(accessToken) },
+  return requestBackend<unknown>(
+    baseUrl,
+    "/preferences/personality/template",
+    accessToken,
   );
-  if (!response.ok) {
-    throw new Error(`template fetch failed: ${response.status}`);
-  }
-  return response.json();
 }
 
 export type AccountDeleteResult = {
@@ -100,29 +119,22 @@ export async function deleteAccount(
   baseUrl: string,
   accessToken: string,
 ): Promise<AccountDeleteResult> {
-  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/auth/account`, {
+  return requestBackend<AccountDeleteResult>(baseUrl, "/auth/account", accessToken, {
     method: "DELETE",
-    headers: apiHeaders(accessToken),
   });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`account delete failed: ${response.status} ${text}`);
-  }
-  return response.json() as Promise<AccountDeleteResult>;
 }
 
 export async function registerDevice(
   baseUrl: string,
   accessToken: string,
 ): Promise<void> {
-  await fetch(`${baseUrl.replace(/\/+$/, "")}/devices/register`, {
+  await requestBackend<void>(baseUrl, "/devices/register", accessToken, {
     method: "POST",
-    headers: apiHeaders(accessToken),
-    body: JSON.stringify({
+    body: {
       device_id: getOrCreateDeviceId(),
       device_type: getDeviceType(),
       label: "Desktop",
-    }),
+    },
   });
 }
 

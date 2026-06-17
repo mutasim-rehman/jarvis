@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  fetchPersonalityTemplate,
   importPersonality,
   patchPreferences,
   type PreferenceSliders,
@@ -39,6 +40,7 @@ export function OnboardingWizard() {
     markOnboardingComplete,
     resolveAccessToken,
     backendAuthError,
+    backendConnecting,
     signOut,
     session,
     me,
@@ -50,6 +52,12 @@ export function OnboardingWizard() {
   const [youtubeConsent, setYoutubeConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void ensureBackendRunning().catch(() => {
+      // Errors surface via refreshMe / backendAuthError
+    });
+  }, []);
 
   const finish = async (skipPersonality: boolean) => {
     setBusy(true);
@@ -111,14 +119,12 @@ export function OnboardingWizard() {
     setError(null);
     let baseUrl = await resolveBackendBaseUrl();
     try {
-      baseUrl = await ensureBackendRunning();
-      const response = await fetch(
-        `${baseUrl.replace(/\/+$/, "")}/preferences/personality/template`,
-      );
-      if (!response.ok) {
-        throw new Error(`template fetch failed: ${response.status}`);
+      const token = await resolveAccessToken();
+      if (!token) {
+        throw new Error("Not signed in. Please sign in again.");
       }
-      const template = await response.json();
+      baseUrl = await ensureBackendRunning();
+      const template = await fetchPersonalityTemplate(baseUrl, token);
       setPersonalityJson(JSON.stringify(template, null, 2));
     } catch (err) {
       setError(formatBackendError(err, baseUrl));
@@ -172,7 +178,17 @@ export function OnboardingWizard() {
 
         <div className="onboarding-panel auth-card">
           {backendAuthError ? (
-            <p className="onboarding-error">{backendAuthError}</p>
+            <div className="onboarding-error-panel">
+              <p className="onboarding-error">{backendAuthError}</p>
+              <button
+                type="button"
+                className="onboarding-btn-secondary"
+                disabled={busy || backendConnecting}
+                onClick={() => void refreshMe()}
+              >
+                {backendConnecting ? "Connecting…" : "Retry connection"}
+              </button>
+            </div>
           ) : null}
 
           {step === 0 ? (
