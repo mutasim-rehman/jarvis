@@ -1,4 +1,5 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
+import { createElectronAuthStorage } from "./electronAuthStorage";
 
 /** Loopback redirect for Electron OAuth (system browser → desktop app). */
 export const ELECTRON_OAUTH_REDIRECT = "http://127.0.0.1:52847/auth/callback";
@@ -12,12 +13,14 @@ export function getSupabase(): SupabaseClient | null {
     return null;
   }
   if (!client) {
+    const storage = createElectronAuthStorage() ?? undefined;
     client = createClient(url, key, {
       auth: {
         flowType: "pkce",
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
+        storage,
       },
     });
   }

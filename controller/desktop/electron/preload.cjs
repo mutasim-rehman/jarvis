@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("desktopApi", {
   getServiceBaseUrl: (serviceId) => ipcRenderer.invoke("services:base-url", serviceId),
   setAuthSession: (accessToken, deviceId) =>
     ipcRenderer.invoke("auth:set-session", accessToken, deviceId),
+  authStorageGetItem: (key) => ipcRenderer.invoke("auth:storage-get", key),
+  authStorageSetItem: (key, value) => ipcRenderer.invoke("auth:storage-set", key, value),
+  authStorageRemoveItem: (key) => ipcRenderer.invoke("auth:storage-remove", key),
   startOAuthListener: () => ipcRenderer.invoke("auth:start-oauth-listener"),
   openExternalUrl: (url) => ipcRenderer.invoke("auth:open-external-url", url),
   openOAuthWindow: (oauthUrl) => ipcRenderer.invoke("auth:open-oauth-window", oauthUrl),

@@ -6,6 +6,7 @@ const { spawn, execSync } = require("node:child_process");
 const os = require("node:os");
 const http = require("node:http");
 const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const authStorage = require("./authStorage.cjs");
 
 const OAUTH_CALLBACK_PORT = 52847;
 const OAUTH_CALLBACK_PREFIX = `http://127.0.0.1:${OAUTH_CALLBACK_PORT}/auth/callback`;
@@ -1035,6 +1036,29 @@ ipcMain.handle("services:base-url", async (_event, serviceId) => getServiceBaseU
 ipcMain.handle("auth:set-session", async (_event, accessToken, deviceId) => {
   authAccessToken = accessToken || null;
   authDeviceId = deviceId || null;
+  return { ok: true };
+});
+
+ipcMain.handle("auth:storage-get", async (_event, key) => {
+  if (!key || typeof key !== "string") {
+    return null;
+  }
+  return authStorage.getItem(key);
+});
+
+ipcMain.handle("auth:storage-set", async (_event, key, value) => {
+  if (!key || typeof key !== "string" || typeof value !== "string") {
+    return { ok: false };
+  }
+  authStorage.setItem(key, value);
+  return { ok: true };
+});
+
+ipcMain.handle("auth:storage-remove", async (_event, key) => {
+  if (!key || typeof key !== "string") {
+    return { ok: false };
+  }
+  authStorage.removeItem(key);
   return { ok: true };
 });
 

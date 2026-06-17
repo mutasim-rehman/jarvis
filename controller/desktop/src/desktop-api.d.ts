@@ -98,6 +98,9 @@ interface DesktopApi {
     accessToken: string | null,
     deviceId: string | null,
   ) => Promise<{ ok: true }>;
+  authStorageGetItem: (key: string) => Promise<string | null>;
+  authStorageSetItem: (key: string, value: string) => Promise<{ ok: boolean }>;
+  authStorageRemoveItem: (key: string) => Promise<{ ok: boolean }>;
   startOAuthListener: () => Promise<{ ok: true; port?: number } | { ok: false; error: string }>;
   openExternalUrl: (url: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   openOAuthWindow: (

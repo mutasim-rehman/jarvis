@@ -126,14 +126,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
+      if (event === "INITIAL_SESSION") {
+        setLoading(false);
+      }
     });
-    return () => sub.subscription.unsubscribe();
+    const loadingTimeout = window.setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+    return () => {
+      window.clearTimeout(loadingTimeout);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
