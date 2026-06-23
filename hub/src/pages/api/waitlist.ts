@@ -17,6 +17,21 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function env(name: string, fallback?: string) {
+  return import.meta.env[name] ?? fallback ?? "";
+}
+
+function requiredEnv(name: string, fallbackName?: string) {
+  const value = env(name) || (fallbackName ? env(fallbackName) : "");
+  if (!value) throw new Error(`${name} not set`);
+  return value;
+}
+
+function normalizeSmtpPassword(host: string, password: string) {
+  // Gmail app passwords are often copied as grouped text with spaces.
+  return host.includes("gmail.com") ? password.replace(/\s+/g, "") : password;
+}
+
 async function getSheetsClient() {
   const raw = import.meta.env.Google_Service_Account_JSON ?? "";
   if (!raw) throw new Error("Google_Service_Account_JSON not set");
@@ -142,18 +157,27 @@ function buildEmailHtml(name: string, email: string): string {
 }
 
 async function sendConfirmationEmail(toName: string, toEmail: string) {
+  const host = env("SMTP_HOST", "smtp.gmail.com");
+  const user = requiredEnv("SMTP_USER");
+  const pass = normalizeSmtpPassword(host, requiredEnv("SMTP_PASS"));
+  const secure = (env("SMTP_SECURE") || env("SMPT_SECURE") || "true") === "true";
+  const appName = env("SMTP_APP_NAME") || env("SMPT_APP_NAME") || "JARVIS";
+
   const transporter = nodemailer.createTransport({
-    host: import.meta.env.SMTP_HOST ?? "smtp.gmail.com",
-    port: Number(import.meta.env.SMTP_PORT ?? 465),
-    secure: (import.meta.env.SMTP_SECURE ?? "true") === "true",
+    host,
+    port: Number(env("SMTP_PORT", secure ? "465" : "587")),
+    secure,
     auth: {
-      user: import.meta.env.SMTP_USER,
-      pass: import.meta.env.SMTP_PASS,
+      user,
+      pass,
     },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   });
 
   await transporter.sendMail({
-    from: `"${import.meta.env.SMTP_APP_NAME ?? "JARVIS"}" <${import.meta.env.SMTP_USER}>`,
+    from: `"${appName}" <${user}>`,
     to: toEmail,
     subject: "You're on the JARVIS waitlist",
     html: buildEmailHtml(toName, toEmail),
@@ -185,11 +209,13 @@ export const POST: APIRoute = async ({ request }) => {
 
     const alreadyIn = await isDuplicate(sheets, sheetId, tab, email);
     if (alreadyIn) {
-      // Still fire the email so they get a reminder, but don't re-add
-      sendConfirmationEmail(name, email).catch((e) =>
-        console.error("[waitlist] email error (existing):", e),
-      );
-      return json({ success: true, existing: true });
+      try {
+        await sendConfirmationEmail(name, email);
+        return json({ success: true, existing: true, emailSent: true });
+      } catch (emailErr) {
+        console.error("[waitlist] email error (existing):", emailErr);
+        return json({ success: true, existing: true, emailSent: false });
+      }
     }
 
     const range = `${tab}!A:D`;
@@ -202,12 +228,13 @@ export const POST: APIRoute = async ({ request }) => {
       },
     });
 
-    // Fire-and-forget — don't block the response on email delivery
-    sendConfirmationEmail(name, email).catch((e) =>
-      console.error("[waitlist] email error:", e),
-    );
-
-    return json({ success: true });
+    try {
+      await sendConfirmationEmail(name, email);
+      return json({ success: true, emailSent: true });
+    } catch (emailErr) {
+      console.error("[waitlist] email error:", emailErr);
+      return json({ success: true, emailSent: false });
+    }
   } catch (err) {
     console.error("[waitlist] error:", err);
     return json({ error: "Could not save your entry. Please try again." }, 500);
