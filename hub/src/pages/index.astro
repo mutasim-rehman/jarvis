@@ -158,7 +158,8 @@ const STAGE_UNITS = 2 + sections.length;
   left: 0;
   height: 100%;
   width: 100%;
-  will-change: clip-path;
+  will-change: width, transform;
+  transform: translate3d(0, 0, 0);
 }
 
 #visual-panel iframe {
@@ -492,11 +493,13 @@ const STAGE_UNITS = 2 + sections.length;
   const SECTIONS_START = 2.0; // scrollUnit at which sections start
   const STAGE_UNITS    = SECTIONS_START + N;
 
-  let currentSection  = -1;
-  let rafPending      = false;
+  let currentSection   = -1;
   let velTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastScrollY     = window.scrollY;
-  let isSpeaking      = false;
+  let lastScrollY      = window.scrollY;
+  let isSpeaking       = false;
+  let targetScrollUnit = 0;
+  let smoothScrollUnit = 0;
+  let rafId: number | null = null;
 
   // ── Helpers ─────────────────────────────────────────────────────
   const clamp   = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -512,15 +515,15 @@ const STAGE_UNITS = 2 + sections.length;
 
   iframe?.addEventListener("load", () => postMode(false));
 
-  // ── Main update — runs inside rAF so it's synced to the display refresh ──
-  function update() {
-    rafPending = false;
-
+  function readScrollUnit() {
     const stageTop    = stage.getBoundingClientRect().top + window.scrollY;
     const maxScroll   = (STAGE_UNITS - 1) * window.innerHeight;
     const scrollInto  = clamp(window.scrollY - stageTop, 0, maxScroll);
-    const scrollUnit  = scrollInto / window.innerHeight;
+    return scrollInto / window.innerHeight;
+  }
 
+  // ── Main update ─────────────────────────────────────────────────
+  function update(scrollUnit: number) {
     // Header: become solid after hero
     header?.classList.toggle("scrolled", scrollUnit > 0.75);
 
@@ -528,9 +531,8 @@ const STAGE_UNITS = 2 + sections.length;
     const rawMorph = clamp((scrollUnit - MORPH_START) / 1.0, 0, 1);
     const morphT   = eio(rawMorph);
 
-    // Visual panel clips from 100% → 48% using clip-path (compositor-only, no reflow)
-    const clipPct = lerp(100, 48, morphT);
-    vPanel.style.clipPath = `inset(0 ${100 - clipPct}% 0 0)`;
+    // Visual panel shrinks from 100% → 48%
+    vPanel.style.width = lerp(100, 48, morphT) + "%";
 
     // Hero text fades and slides apart
     const heroAlpha = clamp(1 - morphT * 2.2, 0, 1);
@@ -565,10 +567,32 @@ const STAGE_UNITS = 2 + sections.length;
     }
   }
 
-  // ── Scroll handler — schedules a single rAF per frame ────────────
+  // ── Scroll handler ───────────────────────────────────────────────
+  function render() {
+    // Wheel scrolling often arrives in large deltas. Interpolate on rAF so
+    // the WebGL iframe resize/move reads as continuous motion.
+    smoothScrollUnit = lerp(smoothScrollUnit, targetScrollUnit, 0.14);
+    if (Math.abs(smoothScrollUnit - targetScrollUnit) < 0.001) {
+      smoothScrollUnit = targetScrollUnit;
+    }
+
+    update(smoothScrollUnit);
+
+    if (smoothScrollUnit !== targetScrollUnit) {
+      rafId = requestAnimationFrame(render);
+    } else {
+      rafId = null;
+    }
+  }
+
+  function scheduleRender() {
+    if (rafId === null) rafId = requestAnimationFrame(render);
+  }
+
   function onScroll() {
     const vel = Math.abs(window.scrollY - lastScrollY);
     lastScrollY = window.scrollY;
+    targetScrollUnit = readScrollUnit();
 
     if (vel > 1 && !isSpeaking) {
       isSpeaking = true;
@@ -580,15 +604,19 @@ const STAGE_UNITS = 2 + sections.length;
       postMode(false);
     }, 450);
 
-    // Coalesce multiple scroll events in the same frame into one update()
-    if (!rafPending) {
-      rafPending = true;
-      requestAnimationFrame(update);
-    }
+    scheduleRender();
   }
 
   window.addEventListener("scroll", onScroll, { passive: true });
-  update();
+  window.addEventListener("resize", () => {
+    targetScrollUnit = readScrollUnit();
+    smoothScrollUnit = targetScrollUnit;
+    update(smoothScrollUnit);
+  });
+
+  targetScrollUnit = readScrollUnit();
+  smoothScrollUnit = targetScrollUnit;
+  update(smoothScrollUnit);
 
   // ── Dot nav click ────────────────────────────────────────────────
   dots.forEach((dot, i) => {

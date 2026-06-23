@@ -6,3 +6,16 @@ backend/data/voiceprint/
 controller/desktop_rough_idea.svg
 debug-ae0a7a.log
 data
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
