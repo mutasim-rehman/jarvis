@@ -158,7 +158,7 @@ const STAGE_UNITS = 2 + sections.length;
   left: 0;
   height: 100%;
   width: 100%;
-  will-change: width;
+  will-change: clip-path;
 }
 
 #visual-panel iframe {
@@ -493,6 +493,7 @@ const STAGE_UNITS = 2 + sections.length;
   const STAGE_UNITS    = SECTIONS_START + N;
 
   let currentSection  = -1;
+  let rafPending      = false;
   let velTimer: ReturnType<typeof setTimeout> | null = null;
   let lastScrollY     = window.scrollY;
   let isSpeaking      = false;
@@ -511,8 +512,10 @@ const STAGE_UNITS = 2 + sections.length;
 
   iframe?.addEventListener("load", () => postMode(false));
 
-  // ── Main update ─────────────────────────────────────────────────
+  // ── Main update — runs inside rAF so it's synced to the display refresh ──
   function update() {
+    rafPending = false;
+
     const stageTop    = stage.getBoundingClientRect().top + window.scrollY;
     const maxScroll   = (STAGE_UNITS - 1) * window.innerHeight;
     const scrollInto  = clamp(window.scrollY - stageTop, 0, maxScroll);
@@ -525,8 +528,9 @@ const STAGE_UNITS = 2 + sections.length;
     const rawMorph = clamp((scrollUnit - MORPH_START) / 1.0, 0, 1);
     const morphT   = eio(rawMorph);
 
-    // Visual panel shrinks from 100% → 48%
-    vPanel.style.width = lerp(100, 48, morphT) + "%";
+    // Visual panel clips from 100% → 48% using clip-path (compositor-only, no reflow)
+    const clipPct = lerp(100, 48, morphT);
+    vPanel.style.clipPath = `inset(0 ${100 - clipPct}% 0 0)`;
 
     // Hero text fades and slides apart
     const heroAlpha = clamp(1 - morphT * 2.2, 0, 1);
@@ -561,7 +565,7 @@ const STAGE_UNITS = 2 + sections.length;
     }
   }
 
-  // ── Scroll handler ───────────────────────────────────────────────
+  // ── Scroll handler — schedules a single rAF per frame ────────────
   function onScroll() {
     const vel = Math.abs(window.scrollY - lastScrollY);
     lastScrollY = window.scrollY;
@@ -576,7 +580,11 @@ const STAGE_UNITS = 2 + sections.length;
       postMode(false);
     }, 450);
 
-    update();
+    // Coalesce multiple scroll events in the same frame into one update()
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(update);
+    }
   }
 
   window.addEventListener("scroll", onScroll, { passive: true });

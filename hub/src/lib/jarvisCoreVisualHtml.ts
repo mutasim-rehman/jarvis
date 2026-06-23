@@ -74,6 +74,25 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
     pulse: 1.4,
   };
 
+  // Performance-first defaults — keeps the look, cuts GPU load vs. the full-detail preset.
+  const PERF = {
+    pixelRatioCap: 1,
+    antialias: false,
+    useBloom: false,
+    bloomStrength: 0.85,
+    ladderSegments: 56,
+    midSegments: 32,
+    chaosSegments: 24,
+    ringSegments: 96,
+    coreSphereSegments: 16,
+    spokeCount: 20,
+    sparkScale: 0.35,
+    fbmOctaves: 3,
+    rungScale: 0.55,
+    buildingDecor: false,
+    buildingChaos: false,
+  };
+
   let _s = 42;
   function srnd() { _s ^= _s << 13; _s ^= _s >> 7; _s ^= _s << 17; return (_s >>> 0) / 4294967296; }
   function sr(a, b) { return a + srnd() * (b - a); }
@@ -81,12 +100,16 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   const NT = new Float32Array(1024);
   for (let i = 0; i < 1024; i++) NT[i] = Math.random() * 2 - 1;
   function n1(x) { const i = Math.floor(x) & 1023, f = x - Math.floor(x), t = f * f * (3 - 2 * f); return NT[i] * (1 - t) + NT[(i + 1) & 1023] * t; }
-  function fbm(x, o = 4) { let v = 0, a = 0.5, fr = 1; for (let i = 0; i < o; i++) { v += n1(x * fr) * a; a *= 0.5; fr *= 2.1; } return v; }
+  function fbm(x, o = PERF.fbmOctaves) { let v = 0, a = 0.5, fr = 1; for (let i = 0; i < o; i++) { v += n1(x * fr) * a; a *= 0.5; fr *= 2.1; } return v; }
 
   const canvas = document.getElementById("c");
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: PERF.antialias,
+    powerPreference: "high-performance",
+  });
   renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, PERF.pixelRatioCap));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
 
@@ -145,7 +168,7 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
 
   function buildLadder({ innerR, outerR, arcStart, arcEnd, rungCount, color, tiltX = 0, tiltY = 0, tiltZ = 0, opacity = 0.85, nOff = 0, extraChaos = false }) {
     const g = new THREE.Group();
-    const S = 120, ipts = [], opts = [];
+    const S = PERF.ladderSegments, ipts = [], opts = [];
     
     const sInnerR = innerR * SF;
     const sOuterR = outerR * SF;
@@ -172,6 +195,7 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
       const ro2 = opacity * (0.35 + srnd() * 0.6);
       const rc = srnd() > 0.7 ? C.white : (srnd() > 0.5 ? C.hot : color);
       g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2p]), lm(rc, ro2)));
+      if (!PERF.buildingDecor) continue;
       const dot = new THREE.Mesh(new THREE.SphereGeometry((0.02 + srnd() * 0.05) * SF, 5, 5), mm(srnd() > 0.4 ? C.white : color, 0.6 + srnd() * 0.35));
       dot.position.copy(p1); g.add(dot);
       if (srnd() > 0.55) {
@@ -192,20 +216,20 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
       }
     }
     const midPts = [], midR = (sInnerR + sOuterR) / 2;
-    for (let i = 0; i <= 80; i++) {
-      const t = i / 80, a = arcStart + t * (arcEnd - arcStart);
+    for (let i = 0; i <= PERF.midSegments; i++) {
+      const t = i / PERF.midSegments, a = arcStart + t * (arcEnd - arcStart);
       const r = midR + fbm(nOff + 70 + t * 7, 4) * (0.65 * SF);
       const da = fbm(nOff + 80 + t * 5, 3) * 0.32;
       const z = fbm(nOff + 90 + t * 6, 3) * (0.5 * SF);
       midPts.push(new THREE.Vector3(Math.cos(a + da) * r, Math.sin(a + da) * r, z));
     }
     g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(midPts), lm(color, opacity * 0.42)));
-    if (extraChaos || srnd() > 0.35) {
-      for (let e = 0; e < 2; e++) {
+    if (PERF.buildingChaos && extraChaos) {
+      for (let e = 0; e < 1; e++) {
         const xPts = [];
         const xR = sInnerR + srnd() * (sOuterR - sInnerR);
-        for (let i = 0; i <= 60; i++) {
-          const t = i / 60, a = arcStart + t * (arcEnd - arcStart);
+        for (let i = 0; i <= PERF.chaosSegments; i++) {
+          const t = i / PERF.chaosSegments, a = arcStart + t * (arcEnd - arcStart);
           const r = xR + fbm(nOff + 120 + e * 50 + t * 8, 3) * (0.7 * SF);
           const da = fbm(nOff + 130 + e * 50 + t * 6, 2) * 0.4;
           const z = fbm(nOff + 140 + e * 50 + t * 5, 2) * (0.5 * SF);
@@ -221,7 +245,12 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   const ladders = [];
   let ns = 0;
   function spawn(opts) {
-    const m = buildLadder({ ...opts, nOff: ns++ * 17.3 });
+    const scaled = {
+      ...opts,
+      rungCount: Math.max(6, Math.round(opts.rungCount * PERF.rungScale)),
+      extraChaos: PERF.buildingChaos && Boolean(opts.extraChaos),
+    };
+    const m = buildLadder({ ...scaled, nOff: ns++ * 17.3 });
     ladders.push({ mesh: m, speed: sr(0.0003, 0.0012), dir: srnd() > 0.5 ? 1 : -1, axis: ["x", "y", "z"][Math.floor(srnd() * 3)] });
     mainGroup.add(m);
   }
@@ -229,47 +258,32 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   const PI = Math.PI, TAU = PI * 2;
   [
     { innerR: 5.8, outerR: 7.2, arcStart: -0.6, arcEnd: 2.0, rungCount: 24, color: C.gold, tiltX: PI / 2, tiltY: 0, tiltZ: 0, extraChaos: true },
-    { innerR: 5.8, outerR: 7.2, arcStart: 2.2, arcEnd: 4.8, rungCount: 24, color: C.gold, tiltX: PI / 2, tiltY: 0, tiltZ: 0, extraChaos: true },
-    { innerR: 5.6, outerR: 6.9, arcStart: 4.9, arcEnd: 6.5, rungCount: 16, color: C.amber, tiltX: PI / 2, tiltY: 0, tiltZ: 0 },
-    { innerR: 5.4, outerR: 6.8, arcStart: 0.3, arcEnd: 2.5, rungCount: 18, color: C.gold, tiltX: 0.42, tiltY: 0.25, tiltZ: PI * 0.55, extraChaos: true },
-    { innerR: 5.4, outerR: 6.8, arcStart: 3.0, arcEnd: 5.2, rungCount: 18, color: C.amber, tiltX: 0.42, tiltY: 0.25, tiltZ: PI * 0.55 },
-    { innerR: 5.4, outerR: 6.8, arcStart: 0.3, arcEnd: 2.5, rungCount: 18, color: C.gold, tiltX: -0.42, tiltY: -0.25, tiltZ: -PI * 0.55, extraChaos: true },
+    { innerR: 5.8, outerR: 7.2, arcStart: 2.2, arcEnd: 4.8, rungCount: 24, color: C.gold, tiltX: PI / 2, tiltY: 0, tiltZ: 0 },
+    { innerR: 5.4, outerR: 6.8, arcStart: 0.3, arcEnd: 2.5, rungCount: 18, color: C.gold, tiltX: 0.42, tiltY: 0.25, tiltZ: PI * 0.55 },
     { innerR: 5.4, outerR: 6.8, arcStart: 3.0, arcEnd: 5.2, rungCount: 18, color: C.amber, tiltX: -0.42, tiltY: -0.25, tiltZ: -PI * 0.55 },
     { innerR: 5.0, outerR: 6.8, arcStart: -0.5, arcEnd: 0.5, rungCount: 12, color: C.gold, tiltX: 0, tiltY: PI / 2, tiltZ: PI / 2 },
-    { innerR: 5.0, outerR: 6.8, arcStart: 2.6, arcEnd: 3.6, rungCount: 12, color: C.gold, tiltX: 0, tiltY: PI / 2, tiltZ: PI / 2 },
-    { innerR: 5.0, outerR: 6.8, arcStart: -0.5, arcEnd: 0.5, rungCount: 12, color: C.amber, tiltX: 0, tiltY: -PI / 2, tiltZ: PI / 2 },
-    { innerR: 4.8, outerR: 6.5, arcStart: 0.2, arcEnd: 2.2, rungCount: 14, color: C.orange, tiltX: 1.25, tiltY: 0.55, tiltZ: 0.35, extraChaos: true },
-    { innerR: 4.8, outerR: 6.5, arcStart: 0.2, arcEnd: 2.2, rungCount: 14, color: C.red, tiltX: -1.25, tiltY: -0.55, tiltZ: 0.35 },
-    { innerR: 4.8, outerR: 6.5, arcStart: 3.5, arcEnd: 5.6, rungCount: 14, color: C.orange, tiltX: 0.95, tiltY: -1.1, tiltZ: 1.1, extraChaos: true },
+    { innerR: 4.8, outerR: 6.5, arcStart: 0.2, arcEnd: 2.2, rungCount: 14, color: C.orange, tiltX: 1.25, tiltY: 0.55, tiltZ: 0.35 },
     { innerR: 5.0, outerR: 6.3, arcStart: 1.0, arcEnd: 3.2, rungCount: 16, color: C.gold, tiltX: 0.65, tiltY: 1.6, tiltZ: 0.9 },
-    { innerR: 5.2, outerR: 6.6, arcStart: 0.8, arcEnd: 2.6, rungCount: 13, color: C.amber, tiltX: 0.2, tiltY: 0.9, tiltZ: 1.8 },
-    { innerR: 5.2, outerR: 6.6, arcStart: 3.2, arcEnd: 5.0, rungCount: 13, color: C.gold, tiltX: -0.2, tiltY: -0.9, tiltZ: 1.8, extraChaos: true },
+    { innerR: 5.2, outerR: 6.6, arcStart: 3.2, arcEnd: 5.0, rungCount: 13, color: C.gold, tiltX: -0.2, tiltY: -0.9, tiltZ: 1.8 },
   ].forEach((o) => spawn(o));
 
   [
-    { innerR: 3.3, outerR: 4.7, arcStart: 0, arcEnd: PI * 0.95, rungCount: 18, color: C.gold, tiltX: PI / 2, tiltY: 0, tiltZ: 0.25, extraChaos: true },
-    { innerR: 3.3, outerR: 4.7, arcStart: PI, arcEnd: PI * 1.95, rungCount: 18, color: C.amber, tiltX: PI / 2, tiltY: 0, tiltZ: 0.25, extraChaos: true },
-    { innerR: 3.2, outerR: 4.6, arcStart: 0, arcEnd: PI * 0.85, rungCount: 15, color: C.gold, tiltX: 0.55, tiltY: 0.35, tiltZ: 0.85, extraChaos: true },
-    { innerR: 3.2, outerR: 4.6, arcStart: 0, arcEnd: PI * 0.85, rungCount: 15, color: C.amber, tiltX: -0.55, tiltY: -0.35, tiltZ: 0.85 },
-    { innerR: 3.0, outerR: 4.2, arcStart: 0.4, arcEnd: 2.3, rungCount: 13, color: C.red, tiltX: 1.1, tiltY: 0, tiltZ: 1.6 },
-    { innerR: 3.0, outerR: 4.2, arcStart: 0.4, arcEnd: 2.3, rungCount: 13, color: C.red, tiltX: -1.1, tiltY: 0, tiltZ: -1.6 },
-    { innerR: 3.3, outerR: 4.5, arcStart: 1.0, arcEnd: 3.6, rungCount: 16, color: C.gold, tiltX: 0.85, tiltY: 1.3, tiltZ: 0.55, extraChaos: true },
+    { innerR: 3.3, outerR: 4.7, arcStart: 0, arcEnd: PI * 0.95, rungCount: 18, color: C.gold, tiltX: PI / 2, tiltY: 0, tiltZ: 0.25 },
+    { innerR: 3.3, outerR: 4.7, arcStart: PI, arcEnd: PI * 1.95, rungCount: 18, color: C.amber, tiltX: PI / 2, tiltY: 0, tiltZ: 0.25 },
+    { innerR: 3.2, outerR: 4.6, arcStart: 0, arcEnd: PI * 0.85, rungCount: 15, color: C.gold, tiltX: 0.55, tiltY: 0.35, tiltZ: 0.85 },
     { innerR: 3.0, outerR: 4.3, arcStart: 0, arcEnd: TAU, rungCount: 20, color: C.amber, tiltX: 0.4, tiltY: 0.7, tiltZ: 1.4 },
   ].forEach((o) => spawn(o));
 
   [
-    { innerR: 1.6, outerR: 3.0, arcStart: 0, arcEnd: TAU, rungCount: 28, color: C.gold, tiltX: PI / 2, tiltY: 0, tiltZ: 0, extraChaos: true },
-    { innerR: 1.6, outerR: 3.0, arcStart: 0, arcEnd: TAU, rungCount: 28, color: C.amber, tiltX: 0.75, tiltY: 0.55, tiltZ: 0, extraChaos: true },
-    { innerR: 1.6, outerR: 3.0, arcStart: 0, arcEnd: TAU, rungCount: 28, color: C.red, tiltX: -0.75, tiltY: -0.55, tiltZ: 0, extraChaos: true },
-    { innerR: 1.8, outerR: 2.9, arcStart: 0.2, arcEnd: 3.1, rungCount: 18, color: C.gold, tiltX: 0, tiltY: 0, tiltZ: 1.3, extraChaos: true },
-    { innerR: 1.8, outerR: 2.9, arcStart: 3.4, arcEnd: 6.1, rungCount: 18, color: C.amber, tiltX: 0, tiltY: 0, tiltZ: 1.3, extraChaos: true },
-    { innerR: 1.5, outerR: 2.6, arcStart: 0.5, arcEnd: 2.9, rungCount: 16, color: C.red, tiltX: 1.4, tiltY: 0.75, tiltZ: 0.5, extraChaos: true },
-    { innerR: 1.5, outerR: 2.6, arcStart: 0, arcEnd: TAU, rungCount: 22, color: C.orange, tiltX: 0, tiltY: PI / 2, tiltZ: 0.3, extraChaos: true },
+    { innerR: 1.6, outerR: 3.0, arcStart: 0, arcEnd: TAU, rungCount: 28, color: C.gold, tiltX: PI / 2, tiltY: 0, tiltZ: 0 },
+    { innerR: 1.6, outerR: 3.0, arcStart: 0, arcEnd: TAU, rungCount: 28, color: C.amber, tiltX: 0.75, tiltY: 0.55, tiltZ: 0 },
+    { innerR: 1.8, outerR: 2.9, arcStart: 0.2, arcEnd: 3.1, rungCount: 18, color: C.gold, tiltX: 0, tiltY: 0, tiltZ: 1.3 },
+    { innerR: 1.5, outerR: 2.6, arcStart: 0, arcEnd: TAU, rungCount: 22, color: C.orange, tiltX: 0, tiltY: PI / 2, tiltZ: 0.3 },
   ].forEach((o) => spawn(o));
 
   const ringGrp = new THREE.Group();
   function wRing(radius, tx, ty, tz, color, opacity, nOff) {
-    const pts = [], S = 240;
+    const pts = [], S = PERF.ringSegments;
     const sRadius = radius * SF;
     for (let i = 0; i <= S; i++) {
       const t = i / S, a = t * TAU;
@@ -284,13 +298,10 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   }
   [
     { r: 5.5, tx: PI / 2, ty: 0, tz: 0, c: C.gold, o: 0.8, n: 1.1 },
-    { r: 5.5, tx: PI / 2, ty: 0, tz: 0.5, c: C.amber, o: 0.55, n: 2.3 },
     { r: 5.2, tx: 0.35, ty: 0.12, tz: 0, c: C.gold, o: 0.5, n: 3.7 },
     { r: 4.0, tx: PI * 0.6, ty: 0.22, tz: 0.45, c: C.amber, o: 0.55, n: 5.1 },
-    { r: 6.5, tx: 0.85, ty: 0.55, tz: 0, c: C.red, o: 0.3, n: 6.5 },
-    { r: 2.8, tx: 0.45, ty: PI * 0.3, tz: 1.1, c: C.red, o: 0.45, n: 7.9 },
     { r: 3.6, tx: PI * 0.4, ty: 0.7, tz: 0.6, c: C.gold, o: 0.4, n: 9.3 },
-    { r: 7.0, tx: 0.15, ty: 0.05, tz: 0.2, c: C.amber, o: 0.2, n: 11.1 },
+    { r: 6.5, tx: 0.85, ty: 0.55, tz: 0, c: C.red, o: 0.3, n: 6.5 },
   ].forEach(({ r, tx, ty, tz, c, o, n }) => ringGrp.add(wRing(r, tx, ty, tz, c, o, n)));
   mainGroup.add(ringGrp);
   const ringMotions = ringGrp.children.map((_, index) => ({
@@ -300,12 +311,12 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   }));
 
   const spokeGrp = new THREE.Group();
-  for (let i = 0; i < 38; i++) {
-    const theta = (i / 38) * TAU, phi = Math.acos(2 * (i / 38) - 1);
+  for (let i = 0; i < PERF.spokeCount; i++) {
+    const theta = (i / PERF.spokeCount) * TAU, phi = Math.acos(2 * (i / PERF.spokeCount) - 1);
     const dir = new THREE.Vector3(Math.sin(phi) * Math.cos(theta), Math.sin(phi) * Math.sin(theta), Math.cos(phi));
     const len = (2.5 + srnd() * 2.8) * SF, pts = [];
-    for (let s = 0; s <= 14; s++) {
-      const t = s / 14, p = dir.clone().multiplyScalar((0.85 * SF) + t * len);
+    for (let s = 0; s <= 8; s++) {
+      const t = s / 8, p = dir.clone().multiplyScalar((0.85 * SF) + t * len);
       p.x += (srnd() - 0.5) * t * (0.35 * SF); p.y += (srnd() - 0.5) * t * (0.35 * SF); pts.push(p);
     }
     const sc = i % 4 === 0 ? C.red : (i % 3 === 0 ? C.gold : C.amber);
@@ -314,20 +325,21 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   mainGroup.add(spokeGrp);
 
   const coreGrp = new THREE.Group();
-  coreGrp.add(new THREE.Mesh(new THREE.SphereGeometry(0.28 * SF, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0.33 })));
+  const CS = PERF.coreSphereSegments;
+  coreGrp.add(new THREE.Mesh(new THREE.SphereGeometry(0.28 * SF, CS, CS), new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0.33 })));
   const shells = [
     { r: 0.65, c: 0xffbb66, o: 0.21 }, { r: 1.1, c: 0xff8800, o: 0.12 }, { r: 1.8, c: 0xff4400, o: 0.06 }, { r: 2.5, c: 0xff2200, o: 0.03 },
-  ].map(({ r, c, o }) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r * SF, 32, 32), mm(c, o)); coreGrp.add(m); return m; });
+  ].map(({ r, c, o }) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r * SF, CS, CS), mm(c, o)); coreGrp.add(m); return m; });
 
   const crPts = [];
   const crRadius = 0.95 * SF;
-  for (let i = 0; i <= 200; i++) { const a = (i / 200) * TAU; crPts.push(new THREE.Vector3(Math.cos(a) * crRadius, Math.sin(a) * crRadius, 0)); }
+  for (let i = 0; i <= 120; i++) { const a = (i / 120) * TAU; crPts.push(new THREE.Vector3(Math.cos(a) * crRadius, Math.sin(a) * crRadius, 0)); }
   const coreRing = new THREE.Line(new THREE.BufferGeometry().setFromPoints(crPts), lm(C.white, 0.21));
   coreRing.rotation.x = PI / 2; coreGrp.add(coreRing);
 
   const cr2pts = [];
   const baseR2 = 1.3 * SF;
-  for (let i = 0; i <= 160; i++) { const a = (i / 160) * TAU, r = baseR2 + fbm(i * 0.05, 2) * (0.15 * SF); cr2pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, fbm(i * 0.08, 2) * (0.12 * SF))); }
+  for (let i = 0; i <= 96; i++) { const a = (i / 96) * TAU, r = baseR2 + fbm(i * 0.05, 2) * (0.15 * SF); cr2pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, fbm(i * 0.08, 2) * (0.12 * SF))); }
   const cr2 = new THREE.Line(new THREE.BufferGeometry().setFromPoints(cr2pts), lm(C.gold, 0.18));
   cr2.rotation.x = PI / 2; cr2.rotation.z = 0.3; coreGrp.add(cr2);
   mainGroup.add(coreGrp);
@@ -345,25 +357,34 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
   }
 
   const sparkSystems = [
-    sparks(5000, 5.5, 8.0, C.gold, 0.06, 0.55),
-    sparks(2500, 3.0, 5.5, C.amber, 0.05, 0.45),
-    sparks(1200, 1.5, 3.0, C.red, 0.045, 0.5),
-    sparks(800, 6.8, 10.0, C.amber, 0.07, 0.22),
-    sparks(600, 7.5, 11.0, C.orange, 0.08, 0.12),
-    sparks(300, 0.3, 1.5, C.white, 0.04, 0.25),
+    sparks(Math.round(5000 * PERF.sparkScale), 5.5, 8.0, C.gold, 0.06, 0.55),
+    sparks(Math.round(2500 * PERF.sparkScale), 3.0, 5.5, C.amber, 0.05, 0.45),
+    sparks(Math.round(1200 * PERF.sparkScale), 1.5, 3.0, C.red, 0.045, 0.5),
+    sparks(Math.round(800 * PERF.sparkScale), 6.8, 10.0, C.amber, 0.07, 0.22),
+    sparks(Math.round(600 * PERF.sparkScale), 7.5, 11.0, C.orange, 0.08, 0.12),
+    sparks(Math.round(300 * PERF.sparkScale), 0.3, 1.5, C.white, 0.04, 0.25),
   ];
   sparkSystems.forEach((s) => mainGroup.add(s));
 
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.05, 0.42, 0.04));
+  let composer = null;
+  if (PERF.useBloom) {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), PERF.bloomStrength, 0.42, 0.04));
+  }
 
   // Init lens shift on load
   applyLensShift();
 
   const clock = new THREE.Clock();
+  let animating = true;
+  document.addEventListener("visibilitychange", () => {
+    animating = !document.hidden;
+  });
+
   function animate() {
     requestAnimationFrame(animate);
+    if (!animating) return;
     const t = clock.getElapsedTime();
     const beat = 0.5 + 0.5 * Math.sin(t * BASE_SPEED_MULTIPLIER * 4.2);
     const beat2 = 0.5 + 0.5 * Math.sin(t * BASE_SPEED_MULTIPLIER * 2.1 + 1.5);
@@ -418,7 +439,11 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
 
     spokeGrp.rotation.y += BASE_SPEED_MULTIPLIER * 0.001;
     controls.update();
-    composer.render();
+    if (composer) {
+      composer.render();
+    } else {
+      renderer.render(scene, camera);
+    }
   }
   animate();
 
@@ -426,7 +451,9 @@ export const jarvisCoreVisualHtml = `<!DOCTYPE html>
     camera.aspect = innerWidth / innerHeight;
     applyLensShift(); // Re-apply shift on resize
     renderer.setSize(innerWidth, innerHeight);
-    composer.setSize(innerWidth, innerHeight);
+    if (composer) {
+      composer.setSize(innerWidth, innerHeight);
+    }
   });
   </script>
 </body>
