@@ -464,12 +464,114 @@ const STAGE_UNITS = 2 + sections.length;
 
 /* ── MOBILE FALLBACK ─────────────────────────────────────────── */
 @media (max-width: 768px) {
-  #hero-left  { left: 4%; max-width: 180px; }
-  #hero-right { right: 4%; max-width: 180px; }
-  .hl-name    { font-size: 2.5rem; }
-  #content-panel { width: 100%; padding: 0 6% 0 6%; }
-  #visual-panel  { height: 42vh; }
-  #dot-nav       { display: none; }
+  #sticky-shell {
+    min-height: 100svh;
+  }
+
+  #visual-panel {
+    top: 4rem;
+    width: 100% !important;
+    height: 32svh;
+    min-height: 230px;
+    max-height: 330px;
+  }
+
+  #visual-panel iframe {
+    transform: scale(1.08);
+    transform-origin: center;
+  }
+
+  #hero-left {
+    top: auto;
+    left: 1.35rem;
+    right: 1.35rem;
+    bottom: 10.5rem;
+    max-width: none;
+    transform: none;
+  }
+
+  #hero-right {
+    top: auto;
+    left: 1.35rem;
+    right: 1.35rem;
+    bottom: 2rem;
+    max-width: none;
+    text-align: left;
+    transform: none;
+  }
+
+  .hl-name {
+    font-size: clamp(3.1rem, 16vw, 4.4rem);
+  }
+
+  .hr-desc {
+    max-width: 26rem;
+  }
+
+  .hr-hint {
+    justify-content: flex-start;
+  }
+
+  #content-panel {
+    top: calc(4rem + 31svh);
+    left: 0;
+    right: auto;
+    width: 100%;
+    height: calc(100svh - (4rem + 31svh));
+    align-items: flex-start;
+    padding: 0;
+  }
+
+  .c-card {
+    top: 0.35rem;
+    left: clamp(1.35rem, 6vw, 2rem);
+    right: clamp(1.35rem, 6vw, 2rem);
+    width: auto;
+    transform: translateY(26px);
+  }
+
+  .c-card[data-state="prev"] {
+    transform: translateY(-26px);
+  }
+
+  .c-card[data-state="next"] {
+    transform: translateY(26px);
+  }
+
+  .c-title {
+    font-size: clamp(2rem, 8.4vw, 2.75rem);
+    line-height: 1.08;
+    margin-bottom: 1rem;
+  }
+
+  .c-body {
+    font-size: 0.92rem;
+    line-height: 1.62;
+    margin-bottom: 1.35rem;
+    max-width: 34rem;
+  }
+
+  .c-chips {
+    gap: 0.45rem;
+  }
+
+  .c-chips li {
+    font-size: 0.68rem;
+    padding: 0.32rem 0.8rem;
+  }
+
+  #sec-indicator {
+    left: clamp(1.35rem, 6vw, 2rem);
+    bottom: max(1.35rem, env(safe-area-inset-bottom));
+  }
+
+  #dot-nav {
+    display: none;
+  }
+
+  #trust-section {
+    padding: 4.5rem 1.35rem;
+  }
 }
 </style>
 
@@ -505,6 +607,7 @@ const STAGE_UNITS = 2 + sections.length;
   const clamp   = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
   const eio     = (t: number) => t < 0.5 ? 2*t*t : -1+(4-2*t)*t; // ease-in-out
   const lerp    = (a: number, b: number, t: number) => a + (b - a) * t;
+  const isMobile = () => window.matchMedia("(max-width: 768px)").matches;
 
   function postMode(speaking: boolean) {
     iframe?.contentWindow?.postMessage(
@@ -531,16 +634,21 @@ const STAGE_UNITS = 2 + sections.length;
     const rawMorph = clamp((scrollUnit - MORPH_START) / 1.0, 0, 1);
     const morphT   = eio(rawMorph);
 
-    // Visual panel shrinks from 100% → 48%
-    vPanel.style.width = lerp(100, 48, morphT) + "%";
+    // Desktop morphs to a side panel. Phones stay stacked so the visual
+    // never collapses into a cramped half-width column.
+    vPanel.style.width = isMobile() ? "100%" : lerp(100, 48, morphT) + "%";
 
     // Hero text fades and slides apart
     const heroAlpha = clamp(1 - morphT * 2.2, 0, 1);
-    const heroSlide = morphT * 60;
+    const heroSlide = morphT * (isMobile() ? 18 : 60);
     hLeft.style.opacity  = String(heroAlpha);
-    hLeft.style.transform  = `translateY(-50%) translateX(${-heroSlide}px)`;
+    hLeft.style.transform  = isMobile()
+      ? `translateX(${-heroSlide}px)`
+      : `translateY(-50%) translateX(${-heroSlide}px)`;
     hRight.style.opacity = String(heroAlpha);
-    hRight.style.transform = `translateY(-50%) translateX(${heroSlide}px)`;
+    hRight.style.transform = isMobile()
+      ? `translateX(${heroSlide}px)`
+      : `translateY(-50%) translateX(${heroSlide}px)`;
 
     // Content panel fades in
     const contentAlpha = clamp((morphT - 0.35) / 0.65, 0, 1);

@@ -250,6 +250,7 @@ body {
 @media (max-width: 640px) {
   .header-inner {
     padding: 0.85rem 1rem;
+    gap: 0.6rem;
   }
 
   .header-nav {
@@ -268,5 +269,29 @@ body {
 
   .header-btn {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-logo span {
+    display: none;
+  }
+
+  .header-inner {
+    padding-inline: 0.75rem;
+  }
+
+  .header-logo {
+    gap: 0;
+  }
+
+  .header-link {
+    padding: 0.32rem 0.38rem;
+    font-size: 0.72rem;
+  }
+
+  .header-cta {
+    padding: 0.38rem 0.65rem;
+    font-size: 0.72rem;
   }
 }
